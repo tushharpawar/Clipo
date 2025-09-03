@@ -1,0 +1,14 @@
+{
+  "private": true,
+  "workspaces": {
+    "packages": [
+      "apps/*",
+      "packages/*"
+    ]
+  },
+  "scripts": {
+    "android": "yarn workspace ClipoApp android",
+    "ios": "yarn workspace ClipoApp ios",
+    "start": "yarn workspace ClipoApp start"
+  }
+}
