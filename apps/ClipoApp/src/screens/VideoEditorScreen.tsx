@@ -1,11 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  Dimensions, 
-  TouchableOpacity,
-  ScrollView,
+import {
+  View,
+  Text,
+  StyleSheet,
+  Dimensions,
   SafeAreaView
 } from 'react-native';
 import Video from 'react-native-video';
@@ -21,12 +19,16 @@ interface EditorStore {
   togglePlayPause: () => void;
   isMuted: boolean;
   clips: { uri: string }[];
+  trimStartTime: number;
+  trimEndTime: number;
+  currentTime: number;
+  toggleMute: () => void;
   setCurrentTime: (time: number) => void;
-  setIsPlaying: (playing: boolean) => void; // Add this to your store if not already there
+  setIsPlaying: (playing: boolean) => void; 
 }
 
 const VideoEditorScreen = () => {
-  const { isPlaying, isMuted, clips, setCurrentTime, togglePlayPause } = useEditorStore() as EditorStore;
+  const { isPlaying, isMuted, clips, setCurrentTime, togglePlayPause, trimStartTime, trimEndTime } = useEditorStore() as EditorStore;
   const firstClip = clips.length > 0 ? clips[0] : null;
   const [videoError, setVideoError] = useState<string | null>(null);
   const [videoLoaded, setVideoLoaded] = useState(false);
@@ -42,29 +44,50 @@ const VideoEditorScreen = () => {
 
   const normalizeUri = (uri: string): string => {
     if (!uri) return '';
-    
+
     if (uri.startsWith('content://') || uri.startsWith('file://') || uri.startsWith('http')) {
       return uri;
     } else if (uri.startsWith('/')) {
       return `file://${uri}`;
     }
-    
     return uri;
   };
 
-  const handleProgress = (progressData: any) => {
-    const newCurrentTime = progressData.currentTime;
-    setCurrentTimeLocal(newCurrentTime);
-    setCurrentTime(newCurrentTime);
-  };
+const handleProgress = (progressData: any) => {
+  const newCurrentTime = progressData.currentTime;
+  setCurrentTimeLocal(newCurrentTime);
+  setCurrentTime(newCurrentTime);
+  
+  if (trimEndTime && newCurrentTime >= trimEndTime) {
+    if (isPlaying) {
+      togglePlayPause();
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.seek(trimStartTime || 0);
+        }
+      }, 100);
+    }
+  }
+
+  if (trimStartTime && newCurrentTime < trimStartTime) {
+    if (videoRef.current) {
+      videoRef.current.seek(trimStartTime);
+    }
+  }
+};
 
   const handleVideoEnd = () => {
-    setCurrentTimeLocal(0);
-    setCurrentTime(0);
-    togglePlayPause();
+    const seekTime = trimStartTime || 0;
+
+    setCurrentTimeLocal(seekTime);
+    setCurrentTime(seekTime);
+
+    if (isPlaying) {
+      togglePlayPause();
+    }
 
     if (videoRef.current) {
-      videoRef.current?.seek(0);
+      videoRef.current.seek(seekTime);
     }
   };
 
@@ -76,7 +99,14 @@ const VideoEditorScreen = () => {
     setCurrentTimeLocal(0);
     setCurrentTime(0);
   };
-
+useEffect(() => {
+  return () => {
+    // Cleanup when component unmounts
+    if (videoRef.current) {
+      videoRef.current.seek(0);
+    }
+  };
+}, []);
   if (!firstClip) {
     return (
       <SafeAreaView style={styles.container}>
@@ -110,7 +140,7 @@ const VideoEditorScreen = () => {
               source={{ uri: videoUri }}
               style={styles.videoPlayer}
               controls={false}
-              resizeMode="contain" 
+              resizeMode="contain"
               paused={!isPlaying}
               muted={isMuted}
               repeat={false} // Keep this false so we can handle the end manually
@@ -128,7 +158,6 @@ const VideoEditorScreen = () => {
             />
           )}
 
-          {/* Loading Overlay */}
           {!videoLoaded && !videoError && (
             <View style={styles.loadingOverlay}>
               <Text style={styles.loadingText}>Loading video...</Text>
@@ -137,13 +166,14 @@ const VideoEditorScreen = () => {
         </View>
       </View>
 
-      {/* Controls Area - 35-40% of screen height */}
       <View style={styles.controlsArea}>
-        <VideoControls 
+        <VideoControls
           videoRef={videoRef}
         />
 
-        <Timeline timelineWidth={screenWidth - 30} />
+        <Timeline timelineWidth={screenWidth - 45}
+          videoRef={videoRef}
+        />
       </View>
     </SafeAreaView>
   );
@@ -154,8 +184,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  
-  // Header
+
   header: {
     height: 60,
     justifyContent: 'center',
@@ -169,7 +198,6 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
 
-  // Video Preview Area (60-65% of screen)
   videoPreviewArea: {
     height: screenHeight * 0.57,
     paddingHorizontal: 20,

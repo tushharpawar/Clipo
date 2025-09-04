@@ -1,21 +1,10 @@
-import { View, Text, StyleSheet } from 'react-native'
-import React from 'react'
+import React from 'react';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useEditorStore } from '../../store/store';
 import colors from '../../constants/colors';
-import Ionicons from 'react-native-vector-icons/Ionicons'
 
-interface EditorStore {
-  isPlaying: boolean;
-  togglePlayPause: () => void;
-  isMuted: boolean;
-  toggleMute: () => void;
-  currentTime: number;
-  clips: { uri: string, duration?: number }[];
-}
-
-const VideoControls = ({videoRef}:any) => {
-
-    const { 
+const VideoControls = ({ videoRef }: any) => {
+  const { 
     isPlaying, 
     togglePlayPause, 
     isMuted, 
@@ -34,31 +23,24 @@ const VideoControls = ({videoRef}:any) => {
 
   return (
     <View style={styles.controls}>
-        <View>
-            <Ionicons 
-                name={isMuted ? "volume-mute-outline" : "volume-high-outline"} 
-                size={22} 
-                style={styles.muteButton}
-                onPress={toggleMute}
-                color={colors.textPrimary}
-            />
-        </View>
+      <TouchableOpacity style={styles.iconButton} onPress={toggleMute}>
+        <Text style={styles.iconText}>
+          {isMuted ? "🔇" : "🔊"}
+        </Text>
+      </TouchableOpacity>
+
       <View style={styles.currentTimeContainer}>
         <Text style={styles.currentTime}>{formatTime(currentTime)} / {formatTime(duration)}</Text>
       </View>
 
-        <View>
-            <Ionicons 
-                name={isPlaying ? "pause-circle-outline" : "play-circle-outline"}
-                size={22} 
-                style={styles.playPauseButton}
-                onPress={togglePlayPause}
-                color={colors.textPrimary}
-            />
-        </View>
+      <TouchableOpacity style={styles.iconButton} onPress={togglePlayPause}>
+        <Text style={styles.iconText}>
+          {isPlaying ? "⏸️" : "▶️"}
+        </Text>
+      </TouchableOpacity>
     </View>
-  )
-}
+  );
+};
 
 const styles = StyleSheet.create({
   controls: {
@@ -67,11 +49,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 10,
   },
-  playPauseButton: {
+  iconButton: {
     padding: 10,
+    borderRadius: 20,
+    backgroundColor: colors.backgroundSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  muteButton: {
-    padding: 10,
+  iconText: {
+    fontSize: 20,
   },
   currentTimeContainer: {
     padding: 10,
@@ -88,4 +74,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default VideoControls
+export default VideoControls;
