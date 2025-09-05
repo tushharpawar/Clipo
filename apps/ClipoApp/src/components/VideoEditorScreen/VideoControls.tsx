@@ -11,7 +11,7 @@ const VideoControls = ({ videoRef }: any) => {
     toggleMute, 
     currentTime,
     clips
-  } = useEditorStore() as EditorStore;
+  } = useEditorStore() as any;
 
   const duration = clips[0]?.duration || 0;
 

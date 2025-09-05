@@ -9,6 +9,8 @@ export const useEditorStore = create((set) => ({
   isMuted: false,
   trimStartTime: 0,
   trimEndTime: 0,
+  audioVolume: 1.0,
+  videoVolume: 1.0,
 
   initializeNewProject: (videoUri: any, videoDuration: any) => set({
     projectId: `Clipo_${Date.now()}`,
@@ -47,6 +49,9 @@ export const useEditorStore = create((set) => ({
   })),
 
   setAudioTrack: (audio: any) => set({ audioTrack: audio }),
+  setAudioVolume: (volume: number) => set({ audioVolume: volume }),
+  setVideoVolume: (volume: number) => set({ videoVolume: volume }),
+  removeAudioTrack: () => set({ audioTrack: null }),
 
   togglePlayPause: () => set((state: any) => ({ isPlaying: !state.isPlaying })),
   toggleMute: () => set((state: any) => ({ isMuted: !state.isMuted })),

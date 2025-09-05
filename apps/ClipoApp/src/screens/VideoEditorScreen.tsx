@@ -1,16 +1,23 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Dimensions,
-  SafeAreaView
+  SafeAreaView,
+  Alert,
+  TouchableOpacity,
+  Platform,
+  Linking
 } from 'react-native';
 import Video from 'react-native-video';
 import { useEditorStore } from '../store/store';
 import colors from '../constants/colors';
 import VideoControls from '../components/VideoEditorScreen/VideoControls';
 import Timeline from '../components/VideoEditorScreen/TimeLine';
+import { check, PERMISSIONS, request, RESULTS } from 'react-native-permissions';
+import { keepLocalCopy, pick } from '@react-native-documents/picker'
+import Sound from 'react-native-sound';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -24,17 +31,44 @@ interface EditorStore {
   currentTime: number;
   toggleMute: () => void;
   setCurrentTime: (time: number) => void;
-  setIsPlaying: (playing: boolean) => void; 
+  setIsPlaying: (playing: boolean) => void;
+  audioTrack: { uri: string; duration?: number } | null;
+  audioVolume: number;
+  videoVolume: number;
+  setAudioTrack: (audio: any) => void;
+  setAudioVolume: (volume: number) => void;
+  setVideoVolume: (volume: number) => void;
+  removeAudioTrack: () => void;
 }
 
 const VideoEditorScreen = () => {
-  const { isPlaying, isMuted, clips, setCurrentTime, togglePlayPause, trimStartTime, trimEndTime } = useEditorStore() as EditorStore;
+  const {
+    isPlaying,
+    isMuted,
+    clips,
+    setCurrentTime,
+    togglePlayPause,
+    trimStartTime,
+    trimEndTime,
+    audioTrack,
+    audioVolume,
+    videoVolume,
+    setAudioTrack,
+    removeAudioTrack
+  } = useEditorStore() as EditorStore;
+
   const firstClip = clips.length > 0 ? clips[0] : null;
   const [videoError, setVideoError] = useState<string | null>(null);
+  const [audioError, setAudioError] = useState<string | null>(null);
   const [videoLoaded, setVideoLoaded] = useState(false);
+  const [audioLoaded, setAudioLoaded] = useState(false);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTimeLocal] = useState(0);
+  const [localAudioFileData, setLocalAudioFileData] = useState<any>(null);
+  const [sound, setSound] = useState<Sound | null>(null);
+
   const videoRef = useRef(null);
+  const audioRef = useRef(null);
 
   useEffect(() => {
     if (firstClip) {
@@ -44,7 +78,6 @@ const VideoEditorScreen = () => {
 
   const normalizeUri = (uri: string): string => {
     if (!uri) return '';
-
     if (uri.startsWith('content://') || uri.startsWith('file://') || uri.startsWith('http')) {
       return uri;
     } else if (uri.startsWith('/')) {
@@ -55,31 +88,32 @@ const VideoEditorScreen = () => {
 
 const handleProgress = (progressData: any) => {
   const newCurrentTime = progressData.currentTime;
-  setCurrentTimeLocal(newCurrentTime);
+  setCurrentTime(newCurrentTime);
   setCurrentTime(newCurrentTime);
   
-  if (trimEndTime && newCurrentTime >= trimEndTime) {
-    if (isPlaying) {
-      togglePlayPause();
-      setTimeout(() => {
-        if (videoRef.current) {
-          videoRef.current.seek(trimStartTime || 0);
-        }
-      }, 100);
-    }
+  // Keep sound in sync
+  if (sound) {
+    sound.getCurrentTime((audioCurrentTime) => {
+      if (typeof audioCurrentTime === 'number' && Math.abs(audioCurrentTime - newCurrentTime) > 0.1) {
+        sound.setCurrentTime(newCurrentTime);
+      }
+    });
   }
 
-  if (trimStartTime && newCurrentTime < trimStartTime) {
+  if (newCurrentTime >= trimEndTime && isPlaying) {
+    const seekTime = trimStartTime || 0;
     if (videoRef.current) {
-      videoRef.current.seek(trimStartTime);
+      videoRef.current.seek(seekTime);
     }
+    if (sound) {
+      sound.setCurrentTime(seekTime);
+    }
+    togglePlayPause();
   }
 };
-
   const handleVideoEnd = () => {
     const seekTime = trimStartTime || 0;
 
-    setCurrentTimeLocal(seekTime);
     setCurrentTime(seekTime);
 
     if (isPlaying) {
@@ -89,8 +123,10 @@ const handleProgress = (progressData: any) => {
     if (videoRef.current) {
       videoRef.current.seek(seekTime);
     }
+    if (audioRef.current) {
+      audioRef.current.seek(seekTime);
+    }
   };
-
   const handleVideoLoad = (data: any) => {
     console.log('Video loaded:', data);
     setVideoLoaded(true);
@@ -99,14 +135,143 @@ const handleProgress = (progressData: any) => {
     setCurrentTimeLocal(0);
     setCurrentTime(0);
   };
-useEffect(() => {
-  return () => {
-    // Cleanup when component unmounts
-    if (videoRef.current) {
-      videoRef.current.seek(0);
+
+  const handleAudioLoad = (data: any) => {
+    setAudioLoaded(true);
+    setAudioError(null);
+
+    const seekTime = trimStartTime || 0;
+    if (audioRef.current) {
+      audioRef.current.seek(seekTime);
     }
   };
-}, []);
+
+
+  const pickAudioFile = async () => {
+    try {
+      let permission;
+      if (Platform.OS === 'ios') {
+        permission = PERMISSIONS.IOS.PHOTO_LIBRARY;
+      } else {
+        const androidVersion = Platform.Version as number;
+        permission = androidVersion >= 33
+          ? PERMISSIONS.ANDROID.READ_MEDIA_AUDIO
+          : PERMISSIONS.ANDROID.READ_EXTERNAL_STORAGE;
+      }
+      const status = await check(permission);
+      console.log('Current permission status:', status);
+
+      if (status === RESULTS.GRANTED) {
+        openFilePicker();
+      } else if (status === RESULTS.BLOCKED) {
+        Alert.alert(
+          'Permission Blocked',
+          'To select an audio file, you need to grant storage access. Please go to your device settings to enable the permission.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => Linking.openSettings() },
+          ]
+        );
+      } else {
+        const requestResult = await request(permission);
+        if (requestResult === RESULTS.GRANTED) {
+          openFilePicker();
+        } else {
+          Alert.alert('Permission Denied', 'You cannot select an audio file without granting permission.');
+        }
+      }
+    } catch (error) {
+      console.error("An error occurred during the permission check:", error);
+    }
+  };
+
+  const openFilePicker = async () => {
+    const [audioFile] = await pick({
+      presentationStyle: 'fullScreen',
+      allowMultiSelection: false,
+      type: ['audio/*'],
+    });
+
+    const [copyResult] = await keepLocalCopy({
+      files:[
+        {
+          uri: audioFile.uri, 
+          fileName: audioFile?.name,
+          mimeType: audioFile.type
+        }
+      ],
+      destination:'cachesDirectory'
+    });
+
+    console.log("Copied audio file:", copyResult);
+    if (audioFile) {
+      setAudioTrack(audioFile);
+      setLocalAudioFileData(copyResult);
+    } else {
+      console.log('No audio file selected');
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (videoRef.current) {
+        videoRef.current.seek(0);
+      }
+      if (audioRef.current) {
+        audioRef.current.seek(0);
+      }
+    };
+  }, []);
+
+const loadAudioTrack = useCallback((audioFile: any) => {
+  if (sound) {
+    sound.release();
+    setSound(null);
+  }
+
+  const newSound = new Sound(audioFile.localUri, '', (error) => {
+    if (error) {
+      console.error('Failed to load audio:', error);
+      setAudioError(`Failed to load audio: ${error.message}`);
+      return;
+    }
+
+    console.log('Audio loaded successfully');
+    setSound(newSound);
+    setAudioLoaded(true);
+    setAudioError(null);
+    newSound.setVolume(audioVolume);
+  });
+}, [sound])
+
+useEffect(() => {
+  console.log("Audio track changed:", audioTrack);
+  if (audioTrack) {
+    loadAudioTrack(localAudioFileData);
+  }
+  
+  return () => {
+    if (sound) {
+      sound.release();
+    }
+  };
+}, [audioTrack]);
+
+useEffect(() => {
+  if (sound && audioTrack) {
+    if (isPlaying) {
+      // Sync audio position with video
+      const currentPos = currentTime;
+      sound.setCurrentTime(currentPos);
+      sound.play();
+      // sound.setVolume(30);
+      // console.log("Playing audio at volume:", audioVolume);
+    } else {
+      sound.pause();
+    }
+  }
+}, [isPlaying, sound]);
+
   if (!firstClip) {
     return (
       <SafeAreaView style={styles.container}>
@@ -118,6 +283,7 @@ useEffect(() => {
   }
 
   const videoUri = normalizeUri(firstClip.uri);
+  const audioUri = audioTrack ? normalizeUri(audioTrack.uri) : null;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -126,7 +292,7 @@ useEffect(() => {
         <Text style={styles.title}>Video Editor</Text>
       </View>
 
-      {/* Video Preview Area - 60-65% of screen height */}
+      {/* Video Preview Area */}
       <View style={styles.videoPreviewArea}>
         <View style={styles.videoContainer}>
           {videoError ? (
@@ -143,14 +309,15 @@ useEffect(() => {
               resizeMode="contain"
               paused={!isPlaying}
               muted={isMuted}
-              repeat={false} // Keep this false so we can handle the end manually
+              volume={videoVolume}
+              repeat={false}
               onError={(error) => {
                 console.error('Video error:', error);
                 setVideoError(error.error?.errorString || 'Unknown video error');
               }}
               onLoad={handleVideoLoad}
               onProgress={handleProgress}
-              onEnd={handleVideoEnd} // Add this handler
+              onEnd={handleVideoEnd}
               onLoadStart={() => {
                 console.log('Video loading started');
                 setVideoLoaded(false);
@@ -164,20 +331,65 @@ useEffect(() => {
             </View>
           )}
         </View>
+
+        {/* ✅ Audio Status Display */}
+        <View style={styles.audioStatus}>
+          {audioTrack ? (
+            <View style={styles.audioTrackInfo}>
+              <View style={styles.audioInfo}>
+                <Text style={styles.audioTrackText}>
+                  🎵 {audioTrack.fileName || 'Audio Track Loaded'}
+                </Text>
+                {audioTrack.size && (
+                  <Text style={styles.audioDetailText}>
+                    Size: {(audioTrack.size / (1024 * 1024)).toFixed(1)} MB
+                  </Text>
+                )}
+              </View>
+              <TouchableOpacity onPress={removeAudioTrack} style={styles.removeAudioButton}>
+                <Text style={styles.removeAudioText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity onPress={pickAudioFile} style={styles.addAudioButton}>
+              <Text style={styles.addAudioText}>🎵 Add Audio Track</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
+      {/* {audioTrack && audioUri && (
+        <Video
+          ref={audioRef}
+          source={{ uri: audioUri }}
+          style={{ width: 0, height: 0, position: 'absolute' }} // Hidden
+          controls={false}
+          paused={!isPlaying}
+          muted={false}
+          volume={audioVolume}
+          repeat={false}
+          onError={(error) => {
+            console.error('Audio error:', error);
+            setAudioError(error.error?.errorString || 'Unknown audio error');
+          }}
+          onLoad={handleAudioLoad}
+          playInBackground={false}
+          playWhenInactive={false}
+        />
+      )} */}
 
       <View style={styles.controlsArea}>
-        <VideoControls
-          videoRef={videoRef}
-        />
+        <VideoControls videoRef={videoRef} />
 
-        <Timeline timelineWidth={screenWidth - 45}
+        <Timeline
+          timelineWidth={screenWidth - 45}
           videoRef={videoRef}
+          audioRef={audioRef} // ✅ Pass audio ref to timeline
         />
       </View>
     </SafeAreaView>
   );
 };
+
 
 const styles = StyleSheet.create({
   container: {
@@ -199,7 +411,7 @@ const styles = StyleSheet.create({
   },
 
   videoPreviewArea: {
-    height: screenHeight * 0.57,
+    height: screenHeight * 0.68,
     paddingHorizontal: 20,
     paddingVertical: 10,
   },
@@ -266,6 +478,57 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 15,
     paddingTop: 10,
+  },
+  audioStatus: {
+    marginTop: 10,
+    paddingHorizontal: 10,
+  },
+  audioTrackInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.backgroundSecondary,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  audioTrackText: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    flex: 1,
+  },
+  removeAudioButton: {
+    padding: 5,
+    backgroundColor: 'rgba(255, 68, 68, 0.2)',
+    borderRadius: 12,
+    marginLeft: 10,
+  },
+  removeAudioText: {
+    color: '#ff4444',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  addAudioButton: {
+    backgroundColor: colors.backgroundSecondary,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+  },
+  addAudioText: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  audioInfo: {
+    flex: 1,
+  },
+  audioDetailText: {
+    color: colors.textSecondary || '#999',
+    fontSize: 12,
+    marginTop: 2,
   },
 });
 

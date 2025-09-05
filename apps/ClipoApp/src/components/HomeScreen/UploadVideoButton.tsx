@@ -1,6 +1,6 @@
 import { Alert, Platform, StyleSheet, Text, Touchable, TouchableOpacity, View } from 'react-native'
 import React, { useEffect, useState } from 'react'
-import { PERMISSIONS, request, RESULTS } from 'react-native-permissions';
+import { PERMISSIONS, requestMultiple, RESULTS } from 'react-native-permissions';
 import { ImagePickerResponse, launchImageLibrary, MediaType } from 'react-native-image-picker';
 import colors from '../../constants/colors';
 import { useNavigation } from '@react-navigation/native';
@@ -25,33 +25,47 @@ const UploadVideoButton = () => {
       }, []);
     
       const checkPermissions = async (): Promise<boolean> => {
-        try {
-          let permission;
-          
-          if (Platform.OS === 'ios') {
-            permission = PERMISSIONS.IOS.PHOTO_LIBRARY;
-          } else {
-            // For Android 13+ (API 33+), use READ_MEDIA_VIDEO
-            // For older Android versions, use READ_EXTERNAL_STORAGE
-            const androidVersion = typeof Platform.Version === 'number' ? Platform.Version : parseInt(Platform.Version, 10);
+    try {
+        let permissionsToRequest: string[] = [];
+        
+        if (Platform.OS === 'ios') {
+            permissionsToRequest.push(PERMISSIONS.IOS.PHOTO_LIBRARY);
+        } else {
+            const androidVersion = Platform.Version as number;
+            
             if (androidVersion >= 33) {
-              permission = PERMISSIONS.ANDROID.READ_MEDIA_VIDEO;
+                permissionsToRequest.push(
+                    PERMISSIONS.ANDROID.READ_MEDIA_VIDEO,
+                    PERMISSIONS.ANDROID.READ_MEDIA_AUDIO
+                );
             } else {
-              permission = PERMISSIONS.ANDROID.READ_EXTERNAL_STORAGE;
+
+                permissionsToRequest.push(PERMISSIONS.ANDROID.READ_EXTERNAL_STORAGE);
+
             }
-          }
-          
-          const result = await request(permission);
-          const granted = result === RESULTS.GRANTED;
-          setPermissionGranted(granted);
-          console.log('Permission result:', result, 'Granted:', granted);
-          return granted;
-        } catch (error) {
-          console.error('Permission check error:', error);
-          setPermissionGranted(false);
-          return false;
         }
-      };
+
+        if (permissionsToRequest.length === 0) {
+            return true;
+        }
+
+        console.log('Requesting permissions:', permissionsToRequest);
+        
+        const results = await requestMultiple(permissionsToRequest as any);
+        const allGranted = Object.values(results).every(
+            (status) => status === RESULTS.GRANTED
+        );
+        
+        setPermissionGranted(allGranted);
+        console.log('Permission results:', results, 'Granted:', allGranted);
+        return allGranted;
+
+    } catch (error) {
+        console.error('Permission check error:', error);
+        setPermissionGranted(false);
+        return false;
+    }
+};
 
       const selectVideo = async () => {
           console.log('selectVideo called, permissionGranted:', permissionGranted);

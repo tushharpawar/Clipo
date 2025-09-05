@@ -25,9 +25,10 @@ interface EditorStore {
 interface TimelineProps {
   timelineWidth: number;
   videoRef?: React.RefObject<any>;
+  audioRef?: React.RefObject<any>;
 }
 
-const Timeline = ({ timelineWidth, videoRef }: TimelineProps) => {
+const Timeline = ({ timelineWidth, videoRef, audioRef }: TimelineProps) => {
   const { currentTime, clips, setCurrentTime, setStartTime, setEndTime, trimStartTime, trimEndTime } = useEditorStore() as EditorStore;
   const duration = clips[0]?.duration || 1;
   const [thumbnails, setThumbnails] = useState<string[]>([]);
@@ -68,24 +69,25 @@ const Timeline = ({ timelineWidth, videoRef }: TimelineProps) => {
     getClipThumbnails();
   }, [getClipThumbnails]);
 
-    useEffect(() => {
+  useEffect(() => {
     leftDragPosition.value = (trimStartTime / duration) * timelineWidth;
     rightDragPosition.value = Math.min(timelineWidth - 20, (trimEndTime / duration) * timelineWidth);
   }, [trimStartTime, trimEndTime, duration, timelineWidth]);
 
   const updateTime = useCallback((newTime: number) => {
-  setCurrentTime(newTime);
-  
+    setCurrentTime(newTime);
 
-  if (videoRef?.current) {
-    clearTimeout(seekTimeoutRef.current);
-    seekTimeoutRef.current = setTimeout(() => {
-      videoRef.current?.seek(newTime);
-    }, 50);
-  }
-}, [setCurrentTime, videoRef]);
+    if (videoRef?.current) {
+      clearTimeout(seekTimeoutRef.current);
+      seekTimeoutRef.current = setTimeout(() => {
+        videoRef.current?.seek(newTime);
 
-// When currentTime changes (from playback), update playhead position
+        if (audioRef?.current) {
+          audioRef.current?.seek(newTime);
+        }
+      }, 50);
+    }
+  }, [setCurrentTime, videoRef, audioRef]);
 
   useEffect(() => {
     if (!isDragging) {
@@ -165,8 +167,8 @@ const Timeline = ({ timelineWidth, videoRef }: TimelineProps) => {
     .onChange((e) => {
       const newPosition = clamp(
         rightDragPosition.value + e.changeX,
-        leftDragPosition.value + 40, 
-        timelineWidth - 20 
+        leftDragPosition.value + 40,
+        timelineWidth - 20
       );
       rightDragPosition.value = newPosition;
 
@@ -182,7 +184,7 @@ const Timeline = ({ timelineWidth, videoRef }: TimelineProps) => {
       runOnJS(updateEndTime)(newEndTime);
     });
 
-    // Gesture Handlers styles & overlays
+  // Gesture Handlers styles & overlays
 
   const leftHandleStyle = useAnimatedStyle(() => {
     return {
@@ -305,7 +307,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
     position: 'relative',
-    margin:8,
+    margin: 8,
   },
   timelineInfo: {
     flexDirection: 'row',
