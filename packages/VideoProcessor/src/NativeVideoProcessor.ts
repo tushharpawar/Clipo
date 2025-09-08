@@ -7,6 +7,7 @@ export interface Spec extends TurboModule {
   addAudio(videoUri: string, audioUri: string): Promise<string>;
   mergeVideos(videoUris: string[]): Promise<string>;
   getThumbnails(sourceUri: string): Promise<string[]>;
+  applyOverlays(sourceUri: string, overlaysJSON: string): Promise<string>;
 }
 
 export default TurboModuleRegistry.getEnforcing<Spec>('VideoProcessor');

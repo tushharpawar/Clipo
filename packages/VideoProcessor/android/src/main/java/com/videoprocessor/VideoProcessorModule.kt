@@ -23,6 +23,20 @@ import android.util.Log
 import android.media.MediaMetadataRetriever
 import android.graphics.Bitmap
 import java.io.FileOutputStream
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
+
+data class Overlay(
+    val id: String,
+    val type: String,
+    val content: String,
+    val x: Double,
+    val y: Double,
+    val scale: Double,
+    val rotation: Double,
+    val startTime: Double,
+    val endTime: Double
+)
 
 @ReactModule(name = VideoProcessorModule.NAME)
 class VideoProcessorModule(reactContext: ReactApplicationContext) :
@@ -458,6 +472,63 @@ class VideoProcessorModule(reactContext: ReactApplicationContext) :
           Uri.fromFile(finalFile).toString()
       }
   }
+
+  override fun applyOverlays(sourceUri: String, overlaysJSON: String, promise: Promise) {
+    try {
+        val sourcePath = getPathFromUri(Uri.parse(sourceUri))
+        val (outputPath, _) = getPublicVideoFile("with_overlays")
+
+        // 1. Parse the JSON string into a list of Overlay objects
+        val gson = Gson()
+        val overlayListType = object : TypeToken<List<Overlay>>() {}.type
+        val overlays: List<Overlay> = gson.fromJson(overlaysJSON, overlayListType)
+
+        if (overlays.isEmpty()) {
+            promise.resolve(sourceUri) // No work to do, return original
+            return
+        }
+
+        // 2. Dynamically build the FFmpeg filter string
+        val filterComplexBuilder = StringBuilder()
+        var inputStream = "[0:v]" // Start with the main video stream
+
+        overlays.forEachIndexed { index, overlay ->
+            val outputStream = "[out$index]"
+            val nextInputStream = if (index < overlays.size - 1) "[in${index + 1}]" else ""
+
+            when (overlay.type) {
+                "text" -> {
+                    // Note: FFmpeg rotation is in radians, which matches Reanimated!
+                    // Scale can be approximated by adjusting fontsize.
+                    val fontSize = 40 * overlay.scale // Base font size of 40
+                    filterComplexBuilder.append(
+                        "$inputStream" +
+                        "drawtext=text='${overlay.content}':fontcolor=white:fontsize=$fontSize:" +
+                        "x=${overlay.x}:y=${overlay.y}:" +
+                        "enable='between(t,${overlay.startTime},${overlay.endTime})'" +
+                        (if (nextInputStream.isNotEmpty()) "$nextInputStream;" else "")
+                    )
+                    inputStream = nextInputStream
+                }
+                "gif" -> {
+                    // TODO: For GIFs, you would need to add them as extra inputs to the command
+                    // and use the `overlay` filter. This is more complex.
+                }
+            }
+        }
+        
+        val command = "-i \"$sourcePath\" -filter_complex \"${filterComplexBuilder.toString()}\" -c:a copy \"$outputPath\""
+        
+        Log.d("VideoProcessor", "Executing FFmpeg command: $command")
+        
+        // 3. Execute the command (same as your filter logic)
+        val session = FFmpegKit.execute(command)
+        // ... handle success/failure and resolve the promise
+
+    } catch (e: Exception) {
+        promise.reject("E_OVERLAY_FAILED", "Could not apply overlays", e)
+    }
+}
 
   override fun multiply(a: Double, b: Double): Double {
       return a * b

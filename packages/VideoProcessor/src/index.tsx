@@ -24,6 +24,10 @@ export function getThumbnails(sourceUri: string): Promise<string[]> {
   return VideoProcessor.getThumbnails(sourceUri);
 }
 
+export function applyOverlays(sourceUri: string, overlaysJSON: string): Promise<string> {
+  return VideoProcessor.applyOverlays(sourceUri, overlaysJSON);
+}
+
 export default {
   multiply,
   trimVideo,
@@ -31,4 +35,5 @@ export default {
   addAudio,
   mergeVideos,
   getThumbnails,
+  applyOverlays,
 };
