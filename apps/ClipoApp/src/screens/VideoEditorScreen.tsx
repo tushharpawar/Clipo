@@ -8,16 +8,20 @@ import {
   Alert,
   TouchableOpacity,
   Platform,
-  Linking
+  Linking,
+  ScrollView
 } from 'react-native';
 import Video from 'react-native-video';
 import { useEditorStore } from '../store/store';
 import colors from '../constants/colors';
 import VideoControls from '../components/VideoEditorScreen/VideoControls';
 import Timeline from '../components/VideoEditorScreen/TimeLine';
+import OverlayItem from '../components/VideoEditorScreen/OverlayItem';
 import { check, PERMISSIONS, request, RESULTS } from 'react-native-permissions';
 import { keepLocalCopy, pick } from '@react-native-documents/picker'
 import Sound from 'react-native-sound';
+import { runOnJS } from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -39,6 +43,7 @@ interface EditorStore {
   setAudioVolume: (volume: number) => void;
   setVideoVolume: (volume: number) => void;
   removeAudioTrack: () => void;
+  overlays: any[];
 }
 
 const VideoEditorScreen = () => {
@@ -54,7 +59,10 @@ const VideoEditorScreen = () => {
     audioVolume,
     videoVolume,
     setAudioTrack,
-    removeAudioTrack
+    setAudioVolume,
+    setVideoVolume,
+    removeAudioTrack,
+    overlays
   } = useEditorStore() as EditorStore;
 
   const firstClip = clips.length > 0 ? clips[0] : null;
@@ -66,6 +74,8 @@ const VideoEditorScreen = () => {
   const [currentTime, setCurrentTimeLocal] = useState(0);
   const [localAudioFileData, setLocalAudioFileData] = useState<any>(null);
   const [sound, setSound] = useState<Sound | null>(null);
+  const setEditingOverlayId = useEditorStore((state:any) => state.setEditingOverlayId);
+  const [videoLayout, setVideoLayout] = useState({ width: 0, height: 0, x: 0, y: 0 });
 
   const videoRef = useRef(null);
   const audioRef = useRef(null);
@@ -281,7 +291,11 @@ useEffect(() => {
       </SafeAreaView>
     );
   }
-
+  const backgroundTapGesture = Gesture.Tap().onEnd(() => {
+    // When the background is tapped, clear the editing ID
+    console.log("Background tapped, clearing editing state.");
+    runOnJS(setEditingOverlayId)(null);
+  });
   const videoUri = normalizeUri(firstClip.uri);
   const audioUri = audioTrack ? normalizeUri(audioTrack.uri) : null;
 
@@ -294,7 +308,13 @@ useEffect(() => {
 
       {/* Video Preview Area */}
       <View style={styles.videoPreviewArea}>
-        <View style={styles.videoContainer}>
+        <GestureDetector gesture={backgroundTapGesture}>
+          <View style={styles.videoContainer}
+            onLayout={(event) => {
+              const layout = event.nativeEvent.layout;
+              setVideoLayout(layout);
+            }}
+          >
           {videoError ? (
             <View style={styles.errorContainer}>
               <Text style={styles.errorText}>Video Error</Text>
@@ -325,12 +345,22 @@ useEffect(() => {
             />
           )}
 
+          {/* Text and other overlays */}
+          {overlays?.map((overlay: any) => (
+            <OverlayItem
+              key={overlay.id}
+              overlay={overlay}
+              boundaries={videoLayout}
+            />
+          ))}
+
           {!videoLoaded && !videoError && (
             <View style={styles.loadingOverlay}>
               <Text style={styles.loadingText}>Loading video...</Text>
             </View>
           )}
         </View>
+        </GestureDetector>
 
         {/* ✅ Audio Status Display */}
         <View style={styles.audioStatus}>

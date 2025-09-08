@@ -11,6 +11,8 @@ export const useEditorStore = create((set) => ({
   trimEndTime: 0,
   audioVolume: 1.0,
   videoVolume: 1.0,
+  overlays: [],
+  editingOverlayId: null,
 
   initializeNewProject: (videoUri: any, videoDuration: any) => set({
     projectId: `Clipo_${Date.now()}`,
@@ -58,11 +60,45 @@ export const useEditorStore = create((set) => ({
   setCurrentTime: (time: any) => set({ currentTime: time }),
   setStartTime: (time: any) => set({ trimStartTime: time }),
   setEndTime: (time: any) => set({ trimEndTime: time }),
-  
-  clearProject: () => set({ 
-    projectId: null, 
-    clips: [], 
-    audioTrack: null, 
+
+  addOverlay: (type: 'text' | 'gif', content: string) => set((state: any) => ({
+    overlays: [
+      ...state.overlays,
+      {
+        id: Date.now(),
+        type: type, // 'text' or 'gif'
+        content: content, // The text string or the GIF's URI
+        // Initial transform properties
+        x: 50,
+        y: 100,
+        scale: 1,
+        rotation: 0,
+        // Initial timing (e.g., first 3 seconds)
+        startTime: 0,
+        endTime: 3,
+      },
+    ],
+  })),
+
+  // ✅ Updates the properties of a specific overlay
+  updateOverlay: (overlayId: any, newProps: any) => set((state:any) => ({
+    overlays: state.overlays.map((o: any) =>
+      o.id === overlayId ? { ...o, ...newProps } : o
+    ),
+  })),
+
+  // ✅ Removes an overlay
+  removeOverlay: (overlayId: any) => set((state: any) => ({
+    overlays: state.overlays.filter((o: any) => o.id !== overlayId),
+  })),
+
+  setEditingOverlayId: (id:any) => set({ editingOverlayId: id }),
+
+  clearProject: () => set({
+    projectId: null,
+    clips: [],
+    audioTrack: null,
+    overlays: [],
     isPlaying: false,
     trimStartTime: 0,
     trimEndTime: 0,
