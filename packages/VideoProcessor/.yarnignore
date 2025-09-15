@@ -1,0 +1,10 @@
+android/src/main/jniLibs/**/*.so
+android/libs/**/*.so
+ios/**/*.a
+ios/**/*.framework
+*.so
+*.a
+*.dylib
+android/src/main/jniLibs/
+**/*.so
+android/build/

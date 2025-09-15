@@ -29,7 +29,9 @@
     "!**/__tests__",
     "!**/__fixtures__",
     "!**/__mocks__",
-    "!**/.*"
+    "!**/.*",
+    "CMakeLists.txt",
+    "*.bin"
   ],
   "scripts": {
     "example": "yarn workspace video-processor-example",
@@ -160,5 +162,8 @@
     "languages": "kotlin-objc",
     "type": "turbo-module",
     "version": "0.53.0"
+  },
+  "dependencies": {
+    "add": "^2.0.6"
   }
 }
