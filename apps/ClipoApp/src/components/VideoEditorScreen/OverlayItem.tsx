@@ -9,6 +9,7 @@ const updateOverlay = useEditorStore((state: any) => state.updateOverlay);
 const removeOverlay = useEditorStore((state: any) => state.removeOverlay);
 
   const [isEditing, setIsEditing] = useState(false);
+  const [isPhotoSelected, setIsPhotoSelected] = useState(false);
   const [textValue, setTextValue] = useState(overlay.content);
   const textInputRef = useRef<TextInput>(null);
 
@@ -96,6 +97,11 @@ const removeOverlay = useEditorStore((state: any) => state.removeOverlay);
     removeOverlay(overlay.id);
   };
 
+  // Handle photo click for selection
+  const handlePhotoPress = () => {
+    setIsPhotoSelected(!isPhotoSelected);
+  };
+
   if (overlay.type === 'text') {
     return (
       <GestureDetector gesture={composedGesture}>
@@ -140,7 +146,36 @@ const removeOverlay = useEditorStore((state: any) => state.removeOverlay);
     );
   }
 
-  // For non-text overlays (GIFs, etc.)
+  // For photo overlays
+  if (overlay.type === 'photo') {
+    return (
+      <GestureDetector gesture={composedGesture}>
+        <Animated.View style={[styles.overlayContainer, animatedStyle]}>
+          {/* Delete button for photo - only visible when selected */}
+          {isPhotoSelected && (
+            <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
+              <Text style={styles.deleteButtonText}>✕</Text>
+            </TouchableOpacity>
+          )}
+          
+          {/* Photo container */}
+          <TouchableOpacity 
+            activeOpacity={1} 
+            onPress={handlePhotoPress}
+            style={styles.photoContainer}
+          >
+            <Image 
+              source={{ uri: overlay.content }} 
+              style={styles.photoOverlay}
+              resizeMode="cover"
+            />
+          </TouchableOpacity>
+        </Animated.View>
+      </GestureDetector>
+    );
+  }
+
+  // For other overlays (GIFs, etc.)
   return (
     <GestureDetector gesture={composedGesture}>
       <Animated.View style={[styles.overlayContainer, animatedStyle]}>
@@ -224,6 +259,18 @@ const styles = StyleSheet.create({
     width: 150,
     height: 150,
     resizeMode: 'contain',
+  },
+  photoContainer: {
+    borderRadius: 8,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  photoOverlay: {
+    width: 120,
+    height: 120,
+    borderRadius: 6,
   },
 });
 
