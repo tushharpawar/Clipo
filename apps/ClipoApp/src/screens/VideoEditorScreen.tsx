@@ -22,8 +22,22 @@ import { keepLocalCopy, pick } from '@react-native-documents/picker'
 import Sound from 'react-native-sound';
 import { runOnJS } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Canvas, Fill, ColorMatrix, BackdropFilter, Rect, Paint, Skia, RuntimeShader } from "@shopify/react-native-skia";
+import { getFilterBlendMode, getFilterMatrix, getFilterOpacity } from '../utils/functions/getFilterMatrix';
+import { VideoFilter } from '../components/VideoEditorScreen/VideoFilter';
+import Caption from '../components/VideoEditorScreen/Caption';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+
+const source = Skia.RuntimeEffect.Make(`
+  uniform shader image;
+  half4 main(float2 xy) {
+    half4 c = image.eval(xy);
+    float gray = (c.r + c.g + c.b) / 3.0;
+    return half4(gray, gray, gray, c.a);
+  }
+`)!;
+
 
 interface EditorStore {
   isPlaying: boolean;
@@ -44,6 +58,8 @@ interface EditorStore {
   setVideoVolume: (volume: number) => void;
   removeAudioTrack: () => void;
   overlays: any[];
+  activeFilter: string;
+  subtitleText: string | null;
 }
 
 const VideoEditorScreen = () => {
@@ -62,7 +78,9 @@ const VideoEditorScreen = () => {
     setAudioVolume,
     setVideoVolume,
     removeAudioTrack,
-    overlays
+    overlays,
+    activeFilter,
+    subtitleText,
   } = useEditorStore() as EditorStore;
 
   const firstClip = clips.length > 0 ? clips[0] : null;
@@ -79,6 +97,9 @@ const VideoEditorScreen = () => {
 
   const videoRef = useRef(null);
   const audioRef = useRef(null);
+  const filterMatrix = getFilterMatrix(activeFilter);
+  const filterOpacity = getFilterOpacity(activeFilter);
+  const filterBlendMode = getFilterBlendMode(activeFilter);
 
   useEffect(() => {
     if (firstClip) {
@@ -324,7 +345,7 @@ useEffect(() => {
             <Video
               ref={videoRef}
               source={{ uri: videoUri }}
-              style={styles.videoPlayer}
+              style={[StyleSheet.absoluteFill,styles.videoPlayer]}
               controls={false}
               resizeMode="contain"
               paused={!isPlaying}
@@ -344,6 +365,67 @@ useEffect(() => {
               }}
             />
           )}
+
+          {subtitleText && (
+            <Caption  
+              transcriptionText={subtitleText} 
+              showWordHighlighting={true} 
+              subtitleStyle='custom'
+            />
+          )}
+
+            {/* <VideoFilter 
+              activeFilter={activeFilter} 
+              videoLayout={videoLayout} 
+            /> */}
+
+        {/* <Canvas style={StyleSheet.absoluteFill}>
+          <Rect x={0} y={0} width={videoLayout.width} height={videoLayout.height}>
+            <Paint blendMode="overlay" color="rgba(0, 100, 255, 0.3)" />
+          </Rect>
+        </Canvas> */}
+
+
+
+
+          {/* {filterMatrix && (
+          <Canvas style={[StyleSheet.absoluteFill]} pointerEvents="none">
+              <BackdropFilter filter={<ColorMatrix matrix={filterMatrix} />} />
+          </Canvas>
+        )} */}
+
+        {/* {filterMatrix && (
+        <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
+          <Rect 
+            x={0} 
+            y={0} 
+            width={videoLayout.width || screenWidth} 
+            height={videoLayout.height || screenHeight}
+            // color="rgba(255,255,255,0.1)"
+            blendMode={"overlay"}
+            // transform={[{ translateX: videoLayout.x || 0 }, { translateY: videoLayout.y || 0 }]}
+          >
+            <ColorMatrix matrix={filterMatrix} />
+          </Rect>
+        </Canvas>
+      )} */}
+{/* 
+      {filterMatrix && videoLayout.width > 0 && (
+        <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
+          <Rect
+            x={0}
+            y={0}
+            width={videoLayout.width}
+            height={videoLayout.height}
+            opacity={filterOpacity.rectOpacity}
+          >
+            <Paint blendMode={filterBlendMode} opacity={filterOpacity.paintOpacity}>
+              <ColorMatrix matrix={filterMatrix} />
+            </Paint>
+          </Rect>
+        </Canvas>
+      )} */}
+
 
           {/* Text and other overlays */}
           {overlays?.map((overlay: any) => (

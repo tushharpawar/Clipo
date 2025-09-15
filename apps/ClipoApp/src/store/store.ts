@@ -13,6 +13,8 @@ export const useEditorStore = create((set) => ({
   videoVolume: 1.0,
   overlays: [],
   editingOverlayId: null,
+  activeFilter: 'none',
+  subtitleText: null,
 
   initializeNewProject: (videoUri: any, videoDuration: any) => set({
     projectId: `Clipo_${Date.now()}`,
@@ -61,13 +63,13 @@ export const useEditorStore = create((set) => ({
   setStartTime: (time: any) => set({ trimStartTime: time }),
   setEndTime: (time: any) => set({ trimEndTime: time }),
 
-  addOverlay: (type: 'text' | 'gif', content: string) => set((state: any) => ({
+  addOverlay: (type: 'text' | 'gif' | 'photo', content: string) => set((state: any) => ({
     overlays: [
       ...state.overlays,
       {
         id: Date.now(),
-        type: type, // 'text' or 'gif'
-        content: content, // The text string or the GIF's URI
+        type: type, // 'text', 'gif', or 'photo'
+        content: content, // The text string, GIF's URI, or photo's URI
         // Initial transform properties
         x: 50,
         y: 100,
@@ -93,6 +95,8 @@ export const useEditorStore = create((set) => ({
   })),
 
   setEditingOverlayId: (id:any) => set({ editingOverlayId: id }),
+  setActiveFilter: (filterName:any) => set({ activeFilter: filterName }),
+  setSubtitleText: (text: string | null) => set({ subtitleText: text }),
 
   clearProject: () => set({
     projectId: null,
