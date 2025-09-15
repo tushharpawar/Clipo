@@ -23,24 +23,22 @@ import android.util.Log
 import android.media.MediaMetadataRetriever
 import android.graphics.Bitmap
 import java.io.FileOutputStream
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.Arguments
 
-data class Overlay(
-    val id: String,
-    val type: String,
-    val content: String,
-    val x: Double,
-    val y: Double,
-    val scale: Double,
-    val rotation: Double,
-    val startTime: Double,
-    val endTime: Double
-)
 
 @ReactModule(name = VideoProcessorModule.NAME)
 class VideoProcessorModule(reactContext: ReactApplicationContext) :
   NativeVideoProcessorSpec(reactContext) {
+
+    private val whisperJNI = WhisperJNI() 
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val audioExtractor = AudioExtractor()
 
   override fun getName(): String {
     return NAME
@@ -134,7 +132,6 @@ class VideoProcessorModule(reactContext: ReactApplicationContext) :
     }
   }
 
-  // Rest of your existing functions remain unchanged...
   override fun trimVideo(sourceUri: String, startTime: Double, endTime: Double, promise: Promise) {
     try {
       Log.d("VideoProcessor", "Starting trim: $sourceUri from $startTime to $endTime")
@@ -473,65 +470,339 @@ class VideoProcessorModule(reactContext: ReactApplicationContext) :
       }
   }
 
-  override fun applyOverlays(sourceUri: String, overlaysJSON: String, promise: Promise) {
-    try {
-        val sourcePath = getPathFromUri(Uri.parse(sourceUri))
-        val (outputPath, _) = getPublicVideoFile("with_overlays")
+  override fun multiply(a: Double, b: Double): Double {
+        return a * b
+  }
 
-        // 1. Parse the JSON string into a list of Overlay objects
-        val gson = Gson()
-        val overlayListType = object : TypeToken<List<Overlay>>() {}.type
-        val overlays: List<Overlay> = gson.fromJson(overlaysJSON, overlayListType)
-
-        if (overlays.isEmpty()) {
-            promise.resolve(sourceUri) // No work to do, return original
-            return
+  override fun initializeWhisper(promise: Promise) {
+    scope.launch {
+      try {
+        Log.d(NAME, "Starting Whisper initialization...")
+        
+        val modelPath = extractModelFromAssets()
+        Log.d(NAME, "Initializing Whisper with model: $modelPath")
+        
+        val success = whisperJNI.initWhisper(modelPath)
+        
+        withContext(Dispatchers.Main) {
+          if (success) {
+            Log.d(NAME, "Whisper initialized successfully")
+            promise.resolve(true)
+          } else {
+            Log.e(NAME, "Whisper initialization failed")
+            promise.reject("WHISPER_INIT_FAILED", "Failed to initialize Whisper")
+          }
         }
+      } catch (e: Exception) {
+        Log.e(NAME, "Whisper initialization error: ${e.message}")
+        withContext(Dispatchers.Main) {
+          promise.reject("WHISPER_INIT_ERROR", "Whisper initialization failed: ${e.message}")
+        }
+      }
+    }
+  }
 
-        // 2. Dynamically build the FFmpeg filter string
-        val filterComplexBuilder = StringBuilder()
-        var inputStream = "[0:v]" // Start with the main video stream
+  override fun generateCaptions(sourceUri: String, promise: Promise) {
+    scope.launch {
+        try {
+            if (!whisperJNI.isInitialized()) {
+                promise.reject("WHISPER_NOT_INITIALIZED", "Whisper not initialized")
+                return@launch
+            }
 
-        overlays.forEachIndexed { index, overlay ->
-            val outputStream = "[out$index]"
-            val nextInputStream = if (index < overlays.size - 1) "[in${index + 1}]" else ""
+            Log.d(NAME, "Generating WORD-LEVEL captions for: $sourceUri")
+            
+            // Use file-based transcription for dynamic audio
+            val transcription = whisperJNI.transcribeAudioFile(sourceUri, "en")
 
-            when (overlay.type) {
-                "text" -> {
-                    // Note: FFmpeg rotation is in radians, which matches Reanimated!
-                    // Scale can be approximated by adjusting fontsize.
-                    val fontSize = 40 * overlay.scale // Base font size of 40
-                    filterComplexBuilder.append(
-                        "$inputStream" +
-                        "drawtext=text='${overlay.content}':fontcolor=white:fontsize=$fontSize:" +
-                        "x=${overlay.x}:y=${overlay.y}:" +
-                        "enable='between(t,${overlay.startTime},${overlay.endTime})'" +
-                        (if (nextInputStream.isNotEmpty()) "$nextInputStream;" else "")
-                    )
-                    inputStream = nextInputStream
+            withContext(Dispatchers.Main) {
+                val result = Arguments.createMap().apply {
+                    putString("text", transcription)
+                    putString("source", sourceUri)
+                    putDouble("timestamp", System.currentTimeMillis().toDouble())
                 }
-                "gif" -> {
-                    // TODO: For GIFs, you would need to add them as extra inputs to the command
-                    // and use the `overlay` filter. This is more complex.
+                promise.resolve(result)
+            }
+        } catch (e: Exception) {
+            Log.e(NAME, "Caption generation error: ${e.message}")
+            promise.reject("CAPTION_ERROR", "Failed to generate captions: ${e.message}")
+        }
+    }
+  }
+
+  override fun isWhisperInitialized(promise: Promise) {
+        promise.resolve(whisperJNI.isInitialized())
+  }
+
+  override fun transcribeAudio(sourceUri: String, promise: Promise) {
+    scope.launch {
+        try {
+            if (!whisperJNI.isInitialized()) {
+                promise.reject("WHISPER_NOT_INITIALIZED", "Whisper not initialized")
+                return@launch
+            }
+
+            Log.d(NAME, "Transcribing audio file: $sourceUri")
+            
+            // For now, since file-based transcription isn't fully implemented in JNI
+            // You can redirect to asset-based or provide a stub
+            promise.reject("NOT_IMPLEMENTED", "File transcription not yet implemented. Use transcribeAssetAudio() for testing with jfk.wav")
+            
+        } catch (e: Exception) {
+            Log.e(NAME, "Audio transcription error: ${e.message}")
+            promise.reject("TRANSCRIPTION_ERROR", "Failed to transcribe audio: ${e.message}")
+        }
+    }
+  }
+
+  override fun cleanupWhisper(promise: Promise) {
+    try {
+      whisperJNI.cleanup()
+      promise.resolve(null)
+    } catch (e: Exception) {
+      promise.reject("CLEANUP_ERROR", "Failed to cleanup: ${e.message}")
+    }
+  }
+
+ override fun transcribeAssetAudio(assetName: String, promise: Promise) {
+    scope.launch {
+        try {
+            if (!whisperJNI.isInitialized()) {
+                promise.reject("WHISPER_NOT_INITIALIZED", "Whisper not initialized")
+                return@launch
+            }
+
+            Log.d(NAME, "Transcribing asset audio: $assetName")
+            
+            // UPDATED: Pass reactApplicationContext to JNI
+            val transcription = whisperJNI.transcribeAssetAudio(
+                reactApplicationContext, // Pass the context here
+                assetName, 
+                "en"
+            )
+
+            withContext(Dispatchers.Main) {
+                val result = Arguments.createMap().apply {
+                    putString("text", transcription)
+                    putString("source", "asset:$assetName")
+                    putDouble("timestamp", System.currentTimeMillis().toDouble())
                 }
+                promise.resolve(result)
+            }
+        } catch (e: Exception) {
+            Log.e(NAME, "Asset transcription error: ${e.message}")
+            promise.reject("TRANSCRIPTION_ERROR", "Failed to transcribe asset: ${e.message}")
+        }
+    }
+ }
+
+ override fun transcribeExtractedAudio(audioFilePath: String, promise: Promise) {
+    scope.launch {
+        try {
+            if (!whisperJNI.isInitialized()) {
+                promise.reject("WHISPER_NOT_INITIALIZED", "Whisper not initialized")
+                return@launch
+            }
+
+            Log.d(NAME, "Transcribing extracted audio: $audioFilePath")
+            
+            val transcription = whisperJNI.transcribeAudioFile(audioFilePath, "en")
+
+            withContext(Dispatchers.Main) {
+                val result = Arguments.createMap().apply {
+                    putString("text", transcription)
+                    putString("source", "extracted:$audioFilePath")
+                    putDouble("timestamp", System.currentTimeMillis().toDouble())
+                    putString("format", "word-level")
+                }
+                promise.resolve(result)
+            }
+        } catch (e: Exception) {
+            Log.e(NAME, "Extracted audio transcription error: ${e.message}")
+            promise.reject("TRANSCRIPTION_ERROR", "Failed to transcribe extracted audio: ${e.message}")
+        }
+    }
+ }
+
+ override fun processVideoForTranscription(videoUri: String, promise: Promise) {
+    scope.launch {
+        try {
+            if (!whisperJNI.isInitialized()) {
+                promise.reject("WHISPER_NOT_INITIALIZED", "Whisper not initialized")
+                return@launch
+            }
+
+            Log.d(NAME, "🎬 Processing video for transcription: $videoUri")
+            
+            // The JS side will handle FFmpeg extraction and pass the audio path
+            // This method will be called after audio is extracted
+            promise.reject("USE_EXTRACT_AND_TRANSCRIBE", "Use extractAudioAndTranscribe method instead")
+            
+        } catch (e: Exception) {
+            Log.e(NAME, "Video processing error: ${e.message}")
+            promise.reject("VIDEO_PROCESSING_ERROR", "Failed to process video: ${e.message}")
+        }
+    }
+ }
+
+ override fun extractAudioAndTranscribe(audioFilePath: String, promise: Promise) {
+    scope.launch {
+        try {
+            if (!whisperJNI.isInitialized()) {
+                promise.reject("WHISPER_NOT_INITIALIZED", "Whisper not initialized")
+                return@launch
+            }
+
+            Log.d(NAME, "🎤 Transcribing extracted audio: $audioFilePath")
+            
+            val transcription = whisperJNI.transcribeAudioFile(audioFilePath, "en")
+
+            withContext(Dispatchers.Main) {
+                val result = Arguments.createMap().apply {
+                    putString("text", transcription)
+                    putString("source", "video:$audioFilePath")
+                    putDouble("timestamp", System.currentTimeMillis().toDouble())
+                    putString("format", "word-level")
+                    putString("type", "video-transcription")
+                }
+                promise.resolve(result)
+            }
+        } catch (e: Exception) {
+            Log.e(NAME, "Audio transcription error: ${e.message}")
+            promise.reject("TRANSCRIPTION_ERROR", "Failed to transcribe extracted audio: ${e.message}")
+        }
+    }
+ }
+
+  override fun extractAudioNative(videoUri: String, audioOutputPath: String, promise: Promise) {
+        scope.launch {
+            try {
+                Log.d(NAME, "🎵 Extracting audio using native MediaCodec...")
+                Log.d(NAME, "📹 Video: $videoUri")
+                Log.d(NAME, "🎵 Output: $audioOutputPath")
+                
+            } catch (e: Exception) {
+                Log.e(NAME, "❌ Native audio extraction error: ${e.message}")
+                promise.reject("EXTRACTION_ERROR", "Native extraction error: ${e.message}")
             }
         }
-        
-        val command = "-i \"$sourcePath\" -filter_complex \"${filterComplexBuilder.toString()}\" -c:a copy \"$outputPath\""
-        
-        Log.d("VideoProcessor", "Executing FFmpeg command: $command")
-        
-        // 3. Execute the command (same as your filter logic)
-        val session = FFmpegKit.execute(command)
-        // ... handle success/failure and resolve the promise
+  }
 
-    } catch (e: Exception) {
-        promise.reject("E_OVERLAY_FAILED", "Could not apply overlays", e)
+  override fun processVideoNative(videoUri: String, audioOutputPath: String, promise: Promise) {
+    scope.launch {
+        try {
+            if (!whisperJNI.isInitialized()) {
+                promise.reject("WHISPER_NOT_INITIALIZED", "Whisper not initialized")
+                return@launch
+            }
+
+            val startTime = System.currentTimeMillis()
+            
+            Log.d(NAME, "🎬 Starting NATIVE video processing with WAV headers...")
+            Log.d(NAME, "📹 Video: $videoUri")
+            Log.d(NAME, "🎵 Audio output: $audioOutputPath")
+
+            // Step 1: Extract audio with proper WAV headers
+            val extractionSuccess = withContext(Dispatchers.IO) {
+                audioExtractor.extractAudioToWav(videoUri, audioOutputPath) // ✅ Use new method
+            }
+
+            if (!extractionSuccess) {
+                promise.reject("EXTRACTION_FAILED", "WAV audio extraction failed")
+                return@launch
+            }
+
+            Log.d(NAME, "🎤 Starting transcription with proper WAV file...")
+            
+            // Step 2: Transcribe the extracted WAV audio
+            val transcription = whisperJNI.transcribeAudioFile(audioOutputPath, "en")
+
+            val processingDuration = System.currentTimeMillis() - startTime
+
+            withContext(Dispatchers.Main) {
+                val result = Arguments.createMap().apply {
+                    putString("text", transcription)
+                    putString("source", "native-wav:$audioOutputPath")
+                    putString("method", "mediacodec+wav+whisper")
+                    putDouble("timestamp", System.currentTimeMillis().toDouble())
+                    putString("format", "word-level")
+                    putString("type", "video-transcription")
+                    putDouble("duration", processingDuration.toDouble())
+                }
+                promise.resolve(result)
+            }
+
+            Log.d(NAME, "✅ NATIVE WAV processing completed in ${processingDuration}ms")
+
+        } catch (e: Exception) {
+            Log.e(NAME, "❌ Native WAV processing failed: ${e.message}")
+            promise.reject("PROCESSING_ERROR", "Native WAV processing failed: ${e.message}")
+        }
     }
-}
+  }
 
-  override fun multiply(a: Double, b: Double): Double {
-      return a * b
+  private fun extractModelFromAssets(): String {
+    val possibleModelNames = listOf(
+      "ggml-tiny-q5_1.bin",
+      "ggml-tiny-q5.bin",
+      "ggml-tiny.bin"
+    )
+    
+    var modelFileName: String? = null
+    
+    for (name in possibleModelNames) {
+      if (modelFileName != null) break
+      
+      try {
+        reactApplicationContext.assets.open(name).use { 
+          modelFileName = name
+          Log.d(NAME, "Found model file: $name")
+        }
+      } catch (e: Exception) {
+        Log.d(NAME, "Model $name not found, trying next...")
+      }
+    }
+    
+    if (modelFileName == null) {
+      val assetList = reactApplicationContext.assets.list("")
+      Log.d(NAME, "Available assets: ${assetList?.joinToString(", ")}")
+      throw Exception("No model file found in assets. Checked: ${possibleModelNames.joinToString(", ")}")
+    }
+    
+    val internalFile = File(reactApplicationContext.filesDir, "whisper_model.bin")
+    
+    if (!internalFile.exists()) {
+      try {
+        Log.d(NAME, "Extracting model from assets: $modelFileName")
+        
+        reactApplicationContext.assets.open(modelFileName).use { inputStream ->
+          internalFile.outputStream().use { outputStream ->
+            inputStream.copyTo(outputStream)
+          }
+        }
+        
+        Log.d(NAME, "Model extracted to: ${internalFile.absolutePath}")
+        Log.d(NAME, "Model file size: ${internalFile.length()} bytes")
+        
+      } catch (e: Exception) {
+        Log.e(NAME, "Failed to extract model: ${e.message}")
+        throw e
+      }
+    } else {
+      Log.d(NAME, "Model already exists: ${internalFile.absolutePath}")
+    }
+    
+    return internalFile.absolutePath
+  }
+
+  private fun extractAudioFromVideo(videoPath: String): String {
+        // TODO: Integrate with your existing video processing logic
+        // This should use your existing trim/processing capabilities to extract audio
+        val audioPath = "${reactApplicationContext.cacheDir}/extracted_audio.wav"
+        
+        // For now, return the placeholder path
+        Log.d(NAME, "Audio extraction placeholder for: $videoPath -> $audioPath")
+        return audioPath
   }
 
   companion object {
