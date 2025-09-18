@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Text, View, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
-import { multiply, initializeWhisper, isWhisperInitialized, transcribeAudio, AutoCaptionGenerationAPI} from 'video-processor';
+import { multiply, initializeWhisper, isWhisperInitialized, transcribeAudio, AutoCaptionGenerationAPI, addOverlay} from 'video-processor';
 
 const result = multiply(3, 7);
 
@@ -15,9 +15,20 @@ export default function App() {
       try {
         console.log('🔄 Initializing Whisper...');
         await initializeWhisper();
-        const initialized = await AutoCaptionGenerationAPI().initialize();
+        const initialized = await addOverlay('sample_video.mp4', JSON.stringify({
+          overlays: [
+            {
+              type: 'text',
+              text: 'Sample Overlay',
+              position: { x: 50, y: 50 },
+              fontSize: 24,
+              color: 'white',
+              backgroundColor: 'rgba(0,0,0,0.5)',
+            },
+          ],
+        })) !== null;
         setWhisperInitialized(initialized);
-        console.log('✅ Whisper initialization result:',await AutoCaptionGenerationAPI().isReady());
+        console.log('✅ Whisper initialization result:', await AutoCaptionGenerationAPI.isReady());
       } catch (error) {
         console.error('❌ Whisper initialization failed:', error);
         setWhisperInitialized(false);
