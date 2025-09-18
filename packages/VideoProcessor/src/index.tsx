@@ -64,6 +64,10 @@ export function cleanupWhisper(): Promise<void> {
   return VideoProcessor.cleanupWhisper();
 }
 
+export function addOverlay(videoUri: string, overlayConfig: string): Promise<string> {
+  return VideoProcessor.addOverlay(videoUri, overlayConfig);
+}
+
 // ✅ EXPLICIT: Create and export the API object
 export const AutoCaptionGenerationAPI = {
   initialize,
@@ -114,4 +118,5 @@ export default {
   cleanup,
   extractAudioNative,
   processVideoNative,
+  addOverlay,
 };

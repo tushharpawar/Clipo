@@ -50,6 +50,8 @@ export interface Spec extends TurboModule {
     type: string;
     duration: number;
   }>;
+
+  addOverlay(videoUri:string,overlayConfig:string):Promise<string>;
   cleanupWhisper(): Promise<void>;
 }
 
