@@ -6,6 +6,7 @@ import colors from '../../constants/colors';
 import TextModal from './TextModal';
 import FilterSelector from './FilterSelector';
 import CaptionGenerator from './CaptionGenerator';
+import {addOverlay as exportAddOverlayFun} from 'video-processor';
 
 const VideoControls = ({ videoRef }: any) => {
   const { 
@@ -81,6 +82,25 @@ const VideoControls = ({ videoRef }: any) => {
     console.log('Applied filter:', filterValue);
   };
 
+  const overlayConfig = {textOverlays: [
+    {
+      text: "Custom Text",
+      startTimeMs: 0,
+      endTimeMs: clips[0]?.duration * 1000 || 5000,
+      x: 25,
+      y: 40,
+      fontSize: 32,
+      color: "#FFFFFF",
+      opacity: 1.0
+    }
+  ],}
+
+  const exportAddOverlay = async () =>{
+    const exportVideo = await exportAddOverlayFun(clips[0]?.uri, JSON.stringify(overlayConfig));
+
+    console.log('Exported video with overlay:', exportVideo);
+  }
+
   return (
     <>
       <View style={styles.controls}>
@@ -112,7 +132,7 @@ const VideoControls = ({ videoRef }: any) => {
 
         <TouchableOpacity 
           style={[styles.filterButton, activeFilter !== 'none' && styles.filterButtonActive]} 
-          onPress={() => setShowFilterModal(true)}
+          onPress={exportAddOverlay}
         >
           <Text style={styles.filterButtonText}>🎨</Text>
         </TouchableOpacity>

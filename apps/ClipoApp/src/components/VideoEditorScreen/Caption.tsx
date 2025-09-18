@@ -135,6 +135,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 8,
     borderRightWidth: 2,
+    zIndex:9999
   },
   subtitleText: {
     fontSize: 18,
@@ -148,8 +149,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   highlightedWord: {
-    backgroundColor: colors.accentPrimary || '#007AFF',
-    color: '#000',
+    // backgroundColor: colors.highlight,
+    color: colors.highlight,
     paddingHorizontal: 3,
     borderRadius: 2,
   },
