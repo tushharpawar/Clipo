@@ -30,6 +30,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.Arguments
+import com.videoprocessor.VideoOverlayProcessor
 
 
 @ReactModule(name = VideoProcessorModule.NAME)
@@ -388,6 +389,34 @@ class VideoProcessorModule(reactContext: ReactApplicationContext) :
     } catch (e: Exception) {
         Log.e("VideoProcessor", "mergeVideos failed", e)
         promise.reject("E_MERGE_FAILED", "Could not merge videos: ${e.message}", e)
+    }
+  }
+
+  override fun addOverlay(sourceUri: String, overlayConfigJson: String, promise: Promise) {
+    try {
+        Log.d("VideoProcessor", "Starting addOverlay for: $sourceUri")
+        val context = reactApplicationContext
+        val inputUri = Uri.parse(sourceUri)
+        val (outputPath, outputUri) = getPublicVideoFile("with_overlay")
+        val tempFile = File.createTempFile("temp_overlay", ".mp4", context.cacheDir)
+
+        // Use the dedicated overlay processor
+        val overlayProcessor = VideoOverlayProcessor()
+        overlayProcessor.processVideoWithOverlays(
+            context,
+            inputUri,
+            tempFile.absolutePath,
+            overlayConfigJson
+        )
+        
+        val finalPath = copyToPublicLocation(tempFile, outputPath, outputUri)
+        tempFile.delete()
+        Log.d("VideoProcessor", "Video with overlays saved to: $finalPath")
+        promise.resolve(finalPath)
+        
+    } catch (e: Exception) {
+        Log.e("VideoProcessor", "addOverlay failed", e)
+        promise.reject("E_OVERLAY_FAILED", "Could not add overlays: ${e.message}", e)
     }
   }
 
