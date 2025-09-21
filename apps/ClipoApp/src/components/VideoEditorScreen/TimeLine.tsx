@@ -315,7 +315,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 8,
-    backgroundColor: '#1A1A1A',
+    backgroundColor: colors.backgroundSecondary,
     borderBottomWidth: 1,
     borderBottomColor: '#333',
   },
