@@ -52,6 +52,11 @@ export interface Spec extends TurboModule {
   }>;
 
   addOverlay(videoUri:string,overlayConfig:string):Promise<string>;
+
+  copyTempToPublic(tempUri: string, fileName?: string): Promise<string>;
+  deleteTempFile(tempUri: string): Promise<boolean>;
+  cleanupTempFiles(tempUris: string[]): Promise<{deleted: number, errors: number, total: number}>;
+  checkTempFile(tempUri: string): Promise<{exists: boolean, size: number, path: string}>;
   cleanupWhisper(): Promise<void>;
 }
 

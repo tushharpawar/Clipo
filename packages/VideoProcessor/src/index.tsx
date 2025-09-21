@@ -68,7 +68,22 @@ export function addOverlay(videoUri: string, overlayConfig: string): Promise<str
   return VideoProcessor.addOverlay(videoUri, overlayConfig);
 }
 
-// ✅ EXPLICIT: Create and export the API object
+export function copyTempToPublic(tempUri: string, fileName?: string): Promise<string>{
+  return VideoProcessor.copyTempToPublic(tempUri,fileName)
+}
+
+export function deleteTempFile(tempUri: string): Promise<boolean>{
+  return VideoProcessor.deleteTempFile(tempUri)
+}
+
+export function cleanupTempFiles(tempUris: string[]): Promise<{deleted: number, errors: number, total: number}>{
+  return VideoProcessor.cleanupTempFiles(tempUris)
+}
+
+export function checkTempFile(tempUri: string): Promise<{exists: boolean, size: number, path: string}>{
+  return VideoProcessor.checkTempFile(tempUri)
+}
+
 export const AutoCaptionGenerationAPI = {
   initialize,
   isReady,
@@ -79,7 +94,6 @@ export const AutoCaptionGenerationAPI = {
   processVideoNative,
 } as const;
 
-// ✅ EXPLICIT: Re-export to ensure it's available
 export { AutoCaptionGenerationAPI as AutoCaptionAPI };
 
 // ✅ EXPLICIT: Also export individual methods
@@ -119,4 +133,8 @@ export default {
   extractAudioNative,
   processVideoNative,
   addOverlay,
+  copyTempToPublic,
+  cleanupTempFiles,
+  checkTempFile,
+  deleteTempFile,
 };
