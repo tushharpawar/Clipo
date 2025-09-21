@@ -1,12 +1,20 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView } from 'react-native';
 import { launchImageLibrary, ImagePickerResponse, MediaType } from 'react-native-image-picker';
 import { useEditorStore } from '../../store/store';
 import colors from '../../constants/colors';
 import TextModal from './TextModal';
-import FilterSelector from './FilterSelector';
 import CaptionGenerator from './CaptionGenerator';
-import {addOverlay as exportAddOverlayFun} from 'video-processor';
+import { 
+  VolumeX, 
+  Volume2, 
+  Type, 
+  Camera, 
+  Play, 
+  Pause,
+  Filter,
+  X
+} from 'lucide-react-native';
 
 const VideoControls = ({ videoRef }: any) => {
   const { 
@@ -17,8 +25,7 @@ const VideoControls = ({ videoRef }: any) => {
     currentTime,
     clips,
     addOverlay,
-    activeFilter,
-    setActiveFilter
+    audioTrack
   } = useEditorStore() as any;
 
   const [showTextModal, setShowTextModal] = useState(false);
@@ -54,92 +61,54 @@ const VideoControls = ({ videoRef }: any) => {
 
       if (response.assets && response.assets[0]) {
         const photo = response.assets[0];
-        console.log('Selected photo:', photo);
-        
-        // Add photo overlay to the store
-        addOverlay('photo', photo.uri);
+        addOverlay('photo', photo.uri,120,120);
       }
     });
   };
 
-  // Available filters - you can customize these based on your Skia implementation
-  const filters = [
-    { name: 'None', value: 'none', emoji: '🚫' },
-    { name: 'Vintage', value: 'vintage', emoji: '📸' },
-    { name: 'Black & White', value: 'blackwhite', emoji: '⚫' },
-    { name: 'Sepia', value: 'sepia', emoji: '🟤' },
-    { name: 'Bright', value: 'bright', emoji: '☀️' },
-    { name: 'Dark', value: 'dark', emoji: '🌙' },
-    { name: 'Cool', value: 'cool', emoji: '❄️' },
-    { name: 'Warm', value: 'warm', emoji: '🔥' },
-    { name: 'Blur', value: 'blur', emoji: '💫' },
-    { name: 'Sharpen', value: 'sharpen', emoji: '🔷' },
-  ];
-
-  const handleFilterSelect = (filterValue: string) => {
-    setActiveFilter(filterValue);
-    setShowFilterModal(false);
-    console.log('Applied filter:', filterValue);
-  };
-
-  const overlayConfig = {textOverlays: [
-    {
-      text: "Custom Text",
-      startTimeMs: 0,
-      endTimeMs: clips[0]?.duration * 1000 || 5000,
-      x: 25,
-      y: 40,
-      fontSize: 32,
-      color: "#FFFFFF",
-      opacity: 1.0
-    }
-  ],}
-
-  const exportAddOverlay = async () =>{
-    const exportVideo = await exportAddOverlayFun(clips[0]?.uri, JSON.stringify(overlayConfig));
-
-    console.log('Exported video with overlay:', exportVideo);
+  const handleMute = () =>{
+    if(audioTrack!== null) return
+    toggleMute()
   }
 
   return (
     <>
       <View style={styles.controls}>
-        <TouchableOpacity style={styles.iconButton} onPress={toggleMute}>
-          <Text style={styles.iconText}>
-            {isMuted ? "🔇" : "🔊"}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          style={styles.textButton} 
-          onPress={() => setShowTextModal(true)}
-        >
-          <Text style={styles.textButtonText}>T</Text>
-        </TouchableOpacity>
-        
-        <CaptionGenerator videoUri={clips[0]?.uri} />
 
         <View style={styles.currentTimeContainer}>
           <Text style={styles.currentTime}>{formatTime(currentTime)} / {formatTime(duration)}</Text>
         </View>
 
-        <TouchableOpacity 
-          style={styles.photoButton} 
-          onPress={pickPhotoFile}
-        >
-          <Text style={styles.photoButtonText}>📷</Text>
+        <TouchableOpacity style={styles.iconButton} onPress={handleMute}>
+          <Text style={styles.iconText}>
+            {isMuted ? <VolumeX size={18} color={colors.textPrimary || '#333'} strokeWidth={2} /> : <Volume2 size={18} color={colors.textPrimary || '#333'} strokeWidth={2} />}
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity 
-          style={[styles.filterButton, activeFilter !== 'none' && styles.filterButtonActive]} 
-          onPress={exportAddOverlay}
+          style={styles.iconButton} 
+          onPress={() => setShowTextModal(true)}
         >
-          <Text style={styles.filterButtonText}>🎨</Text>
+          <Text style={styles.iconText}>
+             <Type size={18} color={colors.textPrimary || '#333'} strokeWidth={2.5} />
+          </Text>
+        </TouchableOpacity>
+        
+        <CaptionGenerator videoUri={clips[0]?.uri} />
+
+        <TouchableOpacity 
+          style={styles.iconButton} 
+          onPress={pickPhotoFile}
+        >
+          <Text style={styles.iconText}>
+            <Camera size={18} color={colors.textPrimary || '#333'} strokeWidth={2.5}/>
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.iconButton} onPress={togglePlayPause}>
           <Text style={styles.iconText}>
-            {isPlaying ? "⏸️" : "▶️"}
+            {isPlaying ? 
+            <Pause size={18} color={colors.textPrimary || '#333'} strokeWidth={2.5}/> : <Play size={18} color={colors.textPrimary || '#333'} strokeWidth={2.5}/>}
           </Text>
         </TouchableOpacity>
       </View>
@@ -149,30 +118,6 @@ const VideoControls = ({ videoRef }: any) => {
         onClose={() => setShowTextModal(false)}
         onAddText={handleAddText}
       />
-
-      {/* Filter Selection Modal */}
-      <Modal
-        visible={showFilterModal}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowFilterModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.filterModal}>
-            <View style={styles.filterHeader}>
-              <Text style={styles.filterTitle}>Select Filter</Text>
-              <TouchableOpacity 
-                style={styles.closeButton}
-                onPress={() => setShowFilterModal(false)}
-              >
-                <Text style={styles.closeButtonText}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            <FilterSelector/>
-          </View>
-        </View>
-      </Modal>
     </>
   );
 };
@@ -192,7 +137,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   iconText: {
-    fontSize: 20,
+    fontSize: 16,
   },
   textButton: {
     padding: 8,
