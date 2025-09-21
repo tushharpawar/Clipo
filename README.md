@@ -29,18 +29,6 @@ It showcases advanced React Native capabilities, native Android integrations, an
 - **React Native Reanimated** (gestures & animations)  
 - **OpenAI Whisper (on-device)** for captions  
 - **Monorepo setup** with Yarn Workspaces  
-
----
-
-## 🛠️ Packages
-
-### `VideoProcessor`
-Custom React Native package exposing core video editing capabilities:  
-- `trimVideo()`  
-- `addOverlay()`  
-- `addSound()`  
-- `removeSound()`  
-
 ---
 
 ## 💡 About
