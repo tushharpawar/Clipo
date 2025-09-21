@@ -1,8 +1,7 @@
-// SubtitleProcessor.ts
 export interface WordData {
   word: string;
-  startTime: number; // in milliseconds
-  endTime: number;   // in milliseconds
+  startTime: number; 
+  endTime: number; 
 }
 
 export interface SubtitleSegment {
@@ -17,8 +16,6 @@ export interface SubtitleSegment {
 export class SubtitleProcessor {
   static parseTranscription(transcriptionText: string): WordData[] {
     const words: WordData[] = [];
-    
-    // Parse lines like: "[00:00.00 --> 00:00.38] So"
     const lines = transcriptionText.trim().split('\n');
     
     for (const line of lines) {
@@ -56,16 +53,16 @@ export class SubtitleProcessor {
   static groupIntoSubtitles(
     words: WordData[], 
     options: {
-      maxDuration?: number;      // Max seconds per subtitle (default: 3)
-      maxWords?: number;         // Max words per subtitle (default: 8)
-      minDuration?: number;      // Min seconds per subtitle (default: 1)
+      maxDuration?: number;      
+      maxWords?: number;         
+      minDuration?: number;   
     } = {}
   ): SubtitleSegment[] {
     
     const {
-      maxDuration = 3000,  // 3 seconds
-      maxWords = 8,        // 8 words max
-      minDuration = 1000   // 1 second min
+      maxDuration = 3000,  
+      maxWords = 8,       
+      minDuration = 1000 
     } = options;
     
     const segments: SubtitleSegment[] = [];
@@ -75,7 +72,6 @@ export class SubtitleProcessor {
     for (let i = 0; i < words.length; i++) {
       const word = words[i];
       
-      // Start new segment if this is the first word
       if (currentSegment.length === 0) {
         segmentStartTime = word.startTime;
       }
@@ -84,13 +80,12 @@ export class SubtitleProcessor {
       
       const segmentDuration = word.endTime - segmentStartTime;
       const isLastWord = i === words.length - 1;
-      
-      // Create segment if we hit limits or natural breaks
+
       const shouldCreateSegment = (
-        currentSegment.length >= maxWords ||           // Too many words
-        segmentDuration >= maxDuration ||              // Too long duration
-        isLastWord ||                                  // Last word
-        this.isNaturalBreak(word, words[i + 1])      // Natural pause
+        currentSegment.length >= maxWords ||           
+        segmentDuration >= maxDuration ||              
+        isLastWord ||                                  
+        this.isNaturalBreak(word, words[i + 1])     
       );
       
       if (shouldCreateSegment && segmentDuration >= minDuration) {
@@ -116,13 +111,11 @@ export class SubtitleProcessor {
    */
   private static isNaturalBreak(currentWord: WordData, nextWord?: WordData): boolean {
     if (!nextWord) return true;
-    
-    // Check for punctuation that indicates end of phrase
+
     if (currentWord.word.match(/[.!?,:;]$/)) {
       return true;
     }
-    
-    // Check for significant pause between words (>200ms)
+
     const pauseDuration = nextWord.startTime - currentWord.endTime;
     if (pauseDuration > 200) {
       return true;

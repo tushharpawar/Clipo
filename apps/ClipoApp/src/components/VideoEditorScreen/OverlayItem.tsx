@@ -1,67 +1,148 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { View, Image, TextInput, StyleSheet, TouchableOpacity, Text } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedStyle, runOnJS } from 'react-native-reanimated';
 import { useEditorStore } from '../../store/store';
 
-const OverlayItem = ({ overlay, boundaries }: { overlay: any, boundaries: any}) => {
-const updateOverlay = useEditorStore((state: any) => state.updateOverlay);
-const removeOverlay = useEditorStore((state: any) => state.removeOverlay);
+const OverlayItem = ({ overlay, boundaries, videoSize }: { overlay: any, boundaries: any, videoSize: any }) => {
+  const updateOverlay = useEditorStore((state: any) => state.updateOverlay);
+  const removeOverlay = useEditorStore((state: any) => state.removeOverlay);
 
   const [isEditing, setIsEditing] = useState(false);
   const [isPhotoSelected, setIsPhotoSelected] = useState(false);
   const [textValue, setTextValue] = useState(overlay.content);
   const textInputRef = useRef<TextInput>(null);
 
-  // Check if overlay should be visible at current time
-//   const isVisible = !currentTime || (currentTime >= overlay.startTime && currentTime <= overlay.endTime);
-  
-//   // Don't render if not visible (except when editing)
-//   if (!isVisible && !isEditing) {
-//     return null;
-//   }
+  function getDisplayedVideoRect(
+    container: { width: number; height: number },
+    video: { width: number; height: number }
+  ) {
+    const videoAspect = video.width / video.height;
+    const containerAspect = container.width / container.height;
 
-  // Shared values for smooth, 60 FPS gesture handling on the UI thread
-  const translateX = useSharedValue(overlay.x);
-  const translateY = useSharedValue(overlay.y);
+    let displayedWidth, displayedHeight, offsetX, offsetY;
+
+    if (videoAspect > containerAspect) {
+      displayedWidth = container.width;
+      displayedHeight = container.width / videoAspect;
+      offsetX = 0;
+      offsetY = (container.height - displayedHeight) / 2;
+    } else {
+      displayedHeight = container.height;
+      displayedWidth = container.height * videoAspect;
+      offsetX = (container.width - displayedWidth) / 2;
+      offsetY = 0;
+    }
+
+    return { x: offsetX, y: offsetY, width: displayedWidth, height: displayedHeight };
+  }
+
+  const rect = useMemo(() => {
+    return getDisplayedVideoRect(boundaries, videoSize);
+  }, [boundaries, videoSize]);
+
+  console.log("Video display rect:", rect);
+
+  const containerX = rect.x + (overlay.x / videoSize.width) * rect.width;
+  const containerY = rect.y + (overlay.y / videoSize.height) * rect.height;
+
+  const translateX = useSharedValue(containerX);
+  const translateY = useSharedValue(containerY);
+
   const scale = useSharedValue(overlay.scale);
   const rotation = useSharedValue(overlay.rotation);
 
-  // Pan gesture for moving the overlay (only when not editing)
+
+  useEffect(() => {
+    translateX.value = rect.x + (overlay.x / videoSize.width) * rect.width;
+    translateY.value = rect.y + (overlay.y / videoSize.height) * rect.height;
+    scale.value = overlay.scale;
+    rotation.value = overlay.rotation;
+  }, [overlay, rect, videoSize]);
+
   const panGesture = Gesture.Pan()
     .onChange((event) => {
-      translateX.value += event.changeX;
-      translateY.value += event.changeY;
+      const newX = translateX.value + event.changeX;
+      const newY = translateY.value + event.changeY;
+      const overlayWidth = overlay.type === 'photo' ? 120 * scale.value :
+        overlay.type === 'text' ? Math.max(80, textValue.length * 12) * scale.value :
+          150 * scale.value;
+      const overlayHeight = overlay.type === 'photo' ? 120 * scale.value :
+        overlay.type === 'text' ? 30 * scale.value :
+          150 * scale.value;
+
+      const minX = rect.x;
+      const maxX = rect.x + rect.width - overlayWidth;
+      const minY = rect.y;
+      const maxY = rect.y + rect.height - overlayHeight;
+
+      translateX.value = Math.min(Math.max(newX, minX), maxX);
+      translateY.value = Math.min(Math.max(newY, minY), maxY);
     })
     .onEnd(() => {
-      // Sync final position with Zustand store
-      runOnJS(updateOverlay)(overlay.id, { x: translateX.value, y: translateY.value });
+      const videoRelativeX = ((translateX.value - rect.x) / rect.width) * videoSize.width;
+      const videoRelativeY = ((translateY.value - rect.y) / rect.height) * videoSize.height;
+      const videoFontSize = (18 * scale.value);
+      runOnJS(updateOverlay)(overlay.id, {
+        x: videoRelativeX,
+        y: videoRelativeY,
+        fontSize: Math.max(18, videoFontSize),
+        imageHeight: overlay.type === 'photo' ? Math.max(120, 120 * scale.value) : 0,
+        imageWidth: overlay.type === 'photo' ? Math.max(120, 120 * scale.value) : 0,
+      });
+
     });
 
-
-  // Pinch gesture for resizing (only when not editing)
   const pinchGesture = Gesture.Pinch()
     .onChange((event) => {
-      scale.value *= event.scaleChange;
+      const newScale = scale.value * event.scaleChange;
+      const minScale = 0.3;
+      const maxScaleX = rect.width / (overlay.type === 'photo' ? 120 : overlay.type === 'text' ? 100 : 150);
+      const maxScaleY = rect.height / (overlay.type === 'photo' ? 120 : overlay.type === 'text' ? 40 : 150);
+      const maxScale = Math.min(maxScaleX, maxScaleY, 3);
+
+      scale.value = Math.min(Math.max(newScale, minScale), maxScale);
+
+      const overlayWidth = overlay.type === 'photo' ? 120 * scale.value :
+        overlay.type === 'text' ? Math.max(80, textValue.length * 12) * scale.value :
+          150 * scale.value;
+      const overlayHeight = overlay.type === 'photo' ? 120 * scale.value :
+        overlay.type === 'text' ? 30 * scale.value :
+          150 * scale.value;
+
+      const minX = rect.x;
+      const maxX = rect.x + rect.width - overlayWidth;
+      const minY = rect.y;
+      const maxY = rect.y + rect.height - overlayHeight;
+
+      translateX.value = Math.min(Math.max(translateX.value, minX), maxX);
+      translateY.value = Math.min(Math.max(translateY.value, minY), maxY);
     })
     .onEnd(() => {
-      runOnJS(updateOverlay)(overlay.id, { scale: scale.value });
+      const videoRelativeX = translateX.value - rect.x;
+      const videoRelativeY = translateY.value - rect.y;
+      const videoFontSize = (18 * scale.value);
+
+      runOnJS(updateOverlay)(overlay.id, {
+        scale: scale.value,
+        x: Math.max(0, videoRelativeX),
+        y: Math.max(0, videoRelativeY),
+        fontSize: Math.max(18, videoFontSize),
+        imageHeight: overlay.type === 'photo' ? Math.max(120, 120 * scale.value) : 0,
+        imageWidth: overlay.type === 'photo' ? Math.max(120, 120 * scale.value) : 0,
+      });
     });
 
-
-  // Rotation gesture (only when not editing)
   const rotateGesture = Gesture.Rotation()
     .onChange((event) => {
       rotation.value += event.rotationChange;
     })
     .onEnd(() => {
-      runOnJS(updateOverlay)(overlay.id, { rotation: rotation.value });
+      runOnJS(updateOverlay)(overlay.id, { rotation: overlay.type === 'photo' ? rotation?.value : 0 });
     });
 
-  // Combine gestures for simultaneous use
   const composedGesture = Gesture.Simultaneous(panGesture, pinchGesture, rotateGesture);
 
-  // Apply the shared values to the component's style
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [
       { translateX: translateX.value },
@@ -71,7 +152,6 @@ const removeOverlay = useEditorStore((state: any) => state.removeOverlay);
     ],
   }));
 
-  // Handle text click for editing
   const handleTextPress = () => {
     if (!isEditing) {
       setIsEditing(true);
@@ -81,23 +161,19 @@ const removeOverlay = useEditorStore((state: any) => state.removeOverlay);
     }
   };
 
-  // Handle text change
   const handleTextChange = (text: string) => {
     setTextValue(text);
   };
 
-  // Handle text editing finish
   const handleTextBlur = () => {
     setIsEditing(false);
     updateOverlay(overlay.id, { content: textValue });
   };
 
-  // Handle delete overlay
   const handleDelete = () => {
     removeOverlay(overlay.id);
   };
 
-  // Handle photo click for selection
   const handlePhotoPress = () => {
     setIsPhotoSelected(!isPhotoSelected);
   };
@@ -106,14 +182,12 @@ const removeOverlay = useEditorStore((state: any) => state.removeOverlay);
     return (
       <GestureDetector gesture={composedGesture}>
         <Animated.View style={[styles.overlayContainer, animatedStyle]}>
-          {/* Delete button - only visible when editing */}
           {isEditing && (
             <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
               <Text style={styles.deleteButtonText}>✕</Text>
             </TouchableOpacity>
           )}
-          
-          {/* Text container with conditional background */}
+
           <View style={[
             styles.textContainer,
             isEditing && styles.textContainerEditing
@@ -130,8 +204,8 @@ const removeOverlay = useEditorStore((state: any) => state.removeOverlay);
                 autoFocus={true}
               />
             ) : (
-              <TouchableOpacity 
-                activeOpacity={1} 
+              <TouchableOpacity
+                activeOpacity={1}
                 onPress={handleTextPress}
                 style={styles.textTouchable}
               >
@@ -151,23 +225,20 @@ const removeOverlay = useEditorStore((state: any) => state.removeOverlay);
     return (
       <GestureDetector gesture={composedGesture}>
         <Animated.View style={[styles.overlayContainer, animatedStyle]}>
-          {/* Delete button for photo - only visible when selected */}
           {isPhotoSelected && (
             <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
               <Text style={styles.deleteButtonText}>✕</Text>
             </TouchableOpacity>
           )}
-          
-          {/* Photo container */}
-          <TouchableOpacity 
-            activeOpacity={1} 
+
+          <TouchableOpacity
+            activeOpacity={1}
             onPress={handlePhotoPress}
             style={styles.photoContainer}
           >
-            <Image 
-              source={{ uri: overlay.content }} 
+            <Image
+              source={{ uri: overlay.content }}
               style={styles.photoOverlay}
-              resizeMode="cover"
             />
           </TouchableOpacity>
         </Animated.View>
@@ -175,7 +246,6 @@ const removeOverlay = useEditorStore((state: any) => state.removeOverlay);
     );
   }
 
-  // For other overlays (GIFs, etc.)
   return (
     <GestureDetector gesture={composedGesture}>
       <Animated.View style={[styles.overlayContainer, animatedStyle]}>
@@ -261,7 +331,6 @@ const styles = StyleSheet.create({
     resizeMode: 'contain',
   },
   photoContainer: {
-    borderRadius: 8,
     overflow: 'hidden',
     borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.3)',
@@ -270,7 +339,6 @@ const styles = StyleSheet.create({
   photoOverlay: {
     width: 120,
     height: 120,
-    borderRadius: 6,
   },
 });
 

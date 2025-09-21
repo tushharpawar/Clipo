@@ -8,8 +8,7 @@ interface TextOverlayProps {
 
 const TextOverlay = ({ currentTime }: TextOverlayProps) => {
   const { overlays } = useEditorStore() as any;
-
-  // Filter overlays to show only text overlays that should be visible at current time
+  
   const visibleTextOverlays = overlays.filter((overlay: any) => 
     overlay.type === 'text' && 
     currentTime >= overlay.startTime && 
@@ -53,7 +52,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    pointerEvents: 'none', // Allow video controls to work underneath
+    pointerEvents: 'none',
     zIndex: 10,
   },
   textOverlay: {
