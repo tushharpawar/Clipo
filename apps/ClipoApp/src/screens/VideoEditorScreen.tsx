@@ -9,7 +9,6 @@ import {
   TouchableOpacity,
   Platform,
   Linking,
-  ScrollView
 } from 'react-native';
 import Video from 'react-native-video';
 import { useEditorStore } from '../store/store';
@@ -22,10 +21,12 @@ import { keepLocalCopy, pick } from '@react-native-documents/picker'
 import Sound from 'react-native-sound';
 import { runOnJS } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { Canvas, Fill, ColorMatrix, BackdropFilter, Rect, Paint, Skia, RuntimeShader } from "@shopify/react-native-skia";
+import { Skia } from "@shopify/react-native-skia";
 import { getFilterBlendMode, getFilterMatrix, getFilterOpacity } from '../utils/functions/getFilterMatrix';
-import { VideoFilter } from '../components/VideoEditorScreen/VideoFilter';
 import Caption from '../components/VideoEditorScreen/Caption';
+import { Cookie, X } from 'lucide-react-native';
+import { useNavigation } from '@react-navigation/native';
+import ExportVideoModal from '../components/VideoEditorScreen/ExportVideoModal';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -60,6 +61,7 @@ interface EditorStore {
   overlays: any[];
   activeFilter: string;
   subtitleText: string | null;
+  clearStates: () => void
 }
 
 const VideoEditorScreen = () => {
@@ -75,12 +77,11 @@ const VideoEditorScreen = () => {
     audioVolume,
     videoVolume,
     setAudioTrack,
-    setAudioVolume,
-    setVideoVolume,
     removeAudioTrack,
     overlays,
     activeFilter,
     subtitleText,
+    clearStates
   } = useEditorStore() as EditorStore;
 
   const firstClip = clips.length > 0 ? clips[0] : null;
@@ -92,14 +93,14 @@ const VideoEditorScreen = () => {
   const [currentTime, setCurrentTimeLocal] = useState(0);
   const [localAudioFileData, setLocalAudioFileData] = useState<any>(null);
   const [sound, setSound] = useState<Sound | null>(null);
-  const setEditingOverlayId = useEditorStore((state:any) => state.setEditingOverlayId);
+  const [showExportModal,setShowExportModal] = useState(false)
+  const setEditingOverlayId = useEditorStore((state: any) => state.setEditingOverlayId);
   const [videoLayout, setVideoLayout] = useState({ width: 0, height: 0, x: 0, y: 0 });
+  const [videoSize, setVideoSize] = useState({ width: 0, height: 0 });
+  const navigation = useNavigation()
 
   const videoRef = useRef(null);
   const audioRef = useRef(null);
-  const filterMatrix = getFilterMatrix(activeFilter);
-  const filterOpacity = getFilterOpacity(activeFilter);
-  const filterBlendMode = getFilterBlendMode(activeFilter);
 
   useEffect(() => {
     if (firstClip) {
@@ -117,31 +118,30 @@ const VideoEditorScreen = () => {
     return uri;
   };
 
-const handleProgress = (progressData: any) => {
-  const newCurrentTime = progressData.currentTime;
-  setCurrentTime(newCurrentTime);
-  setCurrentTime(newCurrentTime);
-  
-  // Keep sound in sync
-  if (sound) {
-    sound.getCurrentTime((audioCurrentTime) => {
-      if (typeof audioCurrentTime === 'number' && Math.abs(audioCurrentTime - newCurrentTime) > 0.1) {
-        sound.setCurrentTime(newCurrentTime);
-      }
-    });
-  }
+  const handleProgress = (progressData: any) => {
+    const newCurrentTime = progressData.currentTime;
+    setCurrentTime(newCurrentTime);
+    setCurrentTime(newCurrentTime);
 
-  if (newCurrentTime >= trimEndTime && isPlaying) {
-    const seekTime = trimStartTime || 0;
-    if (videoRef.current) {
-      videoRef.current.seek(seekTime);
-    }
     if (sound) {
-      sound.setCurrentTime(seekTime);
+      sound.getCurrentTime((audioCurrentTime) => {
+        if (typeof audioCurrentTime === 'number' && Math.abs(audioCurrentTime - newCurrentTime) > 0.1) {
+          sound.setCurrentTime(newCurrentTime);
+        }
+      });
     }
-    togglePlayPause();
-  }
-};
+
+    if (newCurrentTime >= trimEndTime && isPlaying) {
+      const seekTime = trimStartTime || 0;
+      if (videoRef.current) {
+        videoRef.current.seek(seekTime);
+      }
+      if (sound) {
+        sound.setCurrentTime(seekTime);
+      }
+      togglePlayPause();
+    }
+  };
   const handleVideoEnd = () => {
     const seekTime = trimStartTime || 0;
 
@@ -165,6 +165,7 @@ const handleProgress = (progressData: any) => {
     setDuration(data.duration || 0);
     setCurrentTimeLocal(0);
     setCurrentTime(0);
+    setVideoSize({ width: data.naturalSize.width, height: data.naturalSize.height });
   };
 
   const handleAudioLoad = (data: any) => {
@@ -190,7 +191,6 @@ const handleProgress = (progressData: any) => {
           : PERMISSIONS.ANDROID.READ_EXTERNAL_STORAGE;
       }
       const status = await check(permission);
-      console.log('Current permission status:', status);
 
       if (status === RESULTS.GRANTED) {
         openFilePicker();
@@ -224,17 +224,16 @@ const handleProgress = (progressData: any) => {
     });
 
     const [copyResult] = await keepLocalCopy({
-      files:[
+      files: [
         {
-          uri: audioFile.uri, 
+          uri: audioFile.uri,
           fileName: audioFile?.name,
           mimeType: audioFile.type
         }
       ],
-      destination:'cachesDirectory'
+      destination: 'cachesDirectory'
     });
 
-    console.log("Copied audio file:", copyResult);
     if (audioFile) {
       setAudioTrack(audioFile);
       setLocalAudioFileData(copyResult);
@@ -254,54 +253,54 @@ const handleProgress = (progressData: any) => {
     };
   }, []);
 
-const loadAudioTrack = useCallback((audioFile: any) => {
-  if (sound) {
-    sound.release();
-    setSound(null);
-  }
-
-  const newSound = new Sound(audioFile.localUri, '', (error) => {
-    if (error) {
-      console.error('Failed to load audio:', error);
-      setAudioError(`Failed to load audio: ${error.message}`);
-      return;
-    }
-
-    console.log('Audio loaded successfully');
-    setSound(newSound);
-    setAudioLoaded(true);
-    setAudioError(null);
-    newSound.setVolume(audioVolume);
-  });
-}, [sound])
-
-useEffect(() => {
-  console.log("Audio track changed:", audioTrack);
-  if (audioTrack) {
-    loadAudioTrack(localAudioFileData);
-  }
-  
-  return () => {
+  const loadAudioTrack = useCallback((audioFile: any) => {
     if (sound) {
       sound.release();
+      setSound(null);
     }
-  };
-}, [audioTrack]);
 
-useEffect(() => {
-  if (sound && audioTrack) {
-    if (isPlaying) {
-      // Sync audio position with video
-      const currentPos = currentTime;
-      sound.setCurrentTime(currentPos);
-      sound.play();
-      // sound.setVolume(30);
-      // console.log("Playing audio at volume:", audioVolume);
-    } else {
-      sound.pause();
+    const newSound = new Sound(audioFile.localUri, '', (error) => {
+      if (error) {
+        console.error('Failed to load audio:', error);
+        setAudioError(`Failed to load audio: ${error.message}`);
+        return;
+      }
+      setSound(newSound);
+      setAudioLoaded(true);
+      setAudioError(null);
+      newSound.setVolume(audioVolume);
+    });
+  }, [sound])
+
+  useEffect(() => {
+    console.log("Audio track changed:", audioTrack);
+    if (audioTrack) {
+      loadAudioTrack(localAudioFileData);
     }
-  }
-}, [isPlaying, sound]);
+
+    return () => {
+      if (sound) {
+        sound.release();
+      }
+    };
+  }, [audioTrack]);
+
+  useEffect(() => {
+    if (sound && audioTrack) {
+      if (isPlaying) {
+        // Sync audio position with video
+        const currentPos = currentTime;
+        sound.setCurrentTime(currentPos);
+        sound.play();
+      } else {
+        sound.pause();
+      }
+    }
+
+    return () =>{
+      sound?.pause();
+    }
+  }, [isPlaying, sound]);
 
   if (!firstClip) {
     return (
@@ -313,18 +312,45 @@ useEffect(() => {
     );
   }
   const backgroundTapGesture = Gesture.Tap().onEnd(() => {
-    // When the background is tapped, clear the editing ID
-    console.log("Background tapped, clearing editing state.");
     runOnJS(setEditingOverlayId)(null);
   });
   const videoUri = normalizeUri(firstClip.uri);
-  const audioUri = audioTrack ? normalizeUri(audioTrack.uri) : null;
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+      e.preventDefault();
+
+      Alert.alert(
+        'Discard changes?',
+        'If you go back now, your edits will be lost.',
+        [
+          { text: 'Cancel', style: 'cancel', onPress: () => {} },
+          {
+            text: 'Discard',
+            style: 'destructive',
+            onPress: () => {
+              clearStates()
+              navigation.dispatch(e.data.action);
+            },
+          },
+        ]
+      );
+    });
+
+    return unsubscribe;
+  }, [navigation]);
+
 
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Video Editor</Text>
+        <Text style={styles.title}>Clipo</Text>
+        <TouchableOpacity onPress={() => setShowExportModal(true)}>
+          <Text style={{color:colors.accentPrimary,fontSize:16}}>
+            Export
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {/* Video Preview Area */}
@@ -336,158 +362,84 @@ useEffect(() => {
               setVideoLayout(layout);
             }}
           >
-          {videoError ? (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>Video Error</Text>
-              <Text style={styles.errorDetails}>{videoError}</Text>
-            </View>
-          ) : (
-            <Video
-              ref={videoRef}
-              source={{ uri: videoUri }}
-              style={[StyleSheet.absoluteFill,styles.videoPlayer]}
-              controls={false}
-              resizeMode="contain"
-              paused={!isPlaying}
-              muted={isMuted}
-              volume={videoVolume}
-              repeat={false}
-              onError={(error) => {
-                console.error('Video error:', error);
-                setVideoError(error.error?.errorString || 'Unknown video error');
-              }}
-              onLoad={handleVideoLoad}
-              onProgress={handleProgress}
-              onEnd={handleVideoEnd}
-              onLoadStart={() => {
-                console.log('Video loading started');
-                setVideoLoaded(false);
-              }}
-            />
-          )}
+            {videoError ? (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorText}>Video Error</Text>
+                <Text style={styles.errorDetails}>{videoError}</Text>
+              </View>
+            ) : (
+              <Video
+                ref={videoRef}
+                source={{ uri: videoUri }}
+                style={[StyleSheet.absoluteFill, styles.videoPlayer]}
+                controls={false}
+                resizeMode="contain"
+                paused={!isPlaying}
+                muted={isMuted}
+                volume={videoVolume}
+                repeat={false}
+                onError={(error) => {
+                  console.error('Video error:', error);
+                  setVideoError(error.error?.errorString || 'Unknown video error');
+                }}
+                onLoad={handleVideoLoad}
+                onProgress={handleProgress}
+                onEnd={handleVideoEnd}
+                onLoadStart={() => {
+                  console.log('Video loading started');
+                  setVideoLoaded(false);
+                }}
+              />
+            )}
 
-          {subtitleText && (
-            <Caption  
-              transcriptionText={subtitleText} 
-              showWordHighlighting={true} 
-              subtitleStyle='custom'
-            />
-          )}
+            {subtitleText && (
+              <Caption
+                transcriptionText={subtitleText}
+                showWordHighlighting={true}
+                subtitleStyle='custom'
+              />
+            )}
 
-            {/* <VideoFilter 
-              activeFilter={activeFilter} 
-              videoLayout={videoLayout} 
-            /> */}
+            {overlays?.map((overlay: any) => (
+              <OverlayItem
+                key={overlay.id}
+                overlay={overlay}
+                boundaries={videoLayout}
+                videoSize={videoSize}
+              />
+            ))}
 
-        {/* <Canvas style={StyleSheet.absoluteFill}>
-          <Rect x={0} y={0} width={videoLayout.width} height={videoLayout.height}>
-            <Paint blendMode="overlay" color="rgba(0, 100, 255, 0.3)" />
-          </Rect>
-        </Canvas> */}
-
-
-
-
-          {/* {filterMatrix && (
-          <Canvas style={[StyleSheet.absoluteFill]} pointerEvents="none">
-              <BackdropFilter filter={<ColorMatrix matrix={filterMatrix} />} />
-          </Canvas>
-        )} */}
-
-        {/* {filterMatrix && (
-        <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
-          <Rect 
-            x={0} 
-            y={0} 
-            width={videoLayout.width || screenWidth} 
-            height={videoLayout.height || screenHeight}
-            // color="rgba(255,255,255,0.1)"
-            blendMode={"overlay"}
-            // transform={[{ translateX: videoLayout.x || 0 }, { translateY: videoLayout.y || 0 }]}
-          >
-            <ColorMatrix matrix={filterMatrix} />
-          </Rect>
-        </Canvas>
-      )} */}
-{/* 
-      {filterMatrix && videoLayout.width > 0 && (
-        <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
-          <Rect
-            x={0}
-            y={0}
-            width={videoLayout.width}
-            height={videoLayout.height}
-            opacity={filterOpacity.rectOpacity}
-          >
-            <Paint blendMode={filterBlendMode} opacity={filterOpacity.paintOpacity}>
-              <ColorMatrix matrix={filterMatrix} />
-            </Paint>
-          </Rect>
-        </Canvas>
-      )} */}
-
-
-          {/* Text and other overlays */}
-          {overlays?.map((overlay: any) => (
-            <OverlayItem
-              key={overlay.id}
-              overlay={overlay}
-              boundaries={videoLayout}
-            />
-          ))}
-
-          {!videoLoaded && !videoError && (
-            <View style={styles.loadingOverlay}>
-              <Text style={styles.loadingText}>Loading video...</Text>
-            </View>
-          )}
-        </View>
+            {!videoLoaded && !videoError && (
+              <View style={styles.loadingOverlay}>
+                <Text style={styles.loadingText}>Loading video...</Text>
+              </View>
+            )}
+          </View>
         </GestureDetector>
 
-        {/* ✅ Audio Status Display */}
         <View style={styles.audioStatus}>
           {audioTrack ? (
             <View style={styles.audioTrackInfo}>
               <View style={styles.audioInfo}>
                 <Text style={styles.audioTrackText}>
-                  🎵 {audioTrack.fileName || 'Audio Track Loaded'}
+                  {audioTrack.fileName || 'Audio Track Loaded'}
                 </Text>
-                {audioTrack.size && (
-                  <Text style={styles.audioDetailText}>
-                    Size: {(audioTrack.size / (1024 * 1024)).toFixed(1)} MB
-                  </Text>
-                )}
               </View>
               <TouchableOpacity onPress={removeAudioTrack} style={styles.removeAudioButton}>
-                <Text style={styles.removeAudioText}>✕</Text>
+                <Text style={styles.removeAudioText}>
+                  <X size={18} color={colors.error || '#333'} strokeWidth={2} />
+                </Text>
               </TouchableOpacity>
             </View>
           ) : (
             <TouchableOpacity onPress={pickAudioFile} style={styles.addAudioButton}>
-              <Text style={styles.addAudioText}>🎵 Add Audio Track</Text>
+              <Text style={styles.addAudioText}>
+                Add Audio Track
+              </Text>
             </TouchableOpacity>
           )}
         </View>
       </View>
-      {/* {audioTrack && audioUri && (
-        <Video
-          ref={audioRef}
-          source={{ uri: audioUri }}
-          style={{ width: 0, height: 0, position: 'absolute' }} // Hidden
-          controls={false}
-          paused={!isPlaying}
-          muted={false}
-          volume={audioVolume}
-          repeat={false}
-          onError={(error) => {
-            console.error('Audio error:', error);
-            setAudioError(error.error?.errorString || 'Unknown audio error');
-          }}
-          onLoad={handleAudioLoad}
-          playInBackground={false}
-          playWhenInactive={false}
-        />
-      )} */}
 
       <View style={styles.controlsArea}>
         <VideoControls videoRef={videoRef} />
@@ -495,9 +447,16 @@ useEffect(() => {
         <Timeline
           timelineWidth={screenWidth - 45}
           videoRef={videoRef}
-          audioRef={audioRef} // ✅ Pass audio ref to timeline
+          audioRef={audioRef}
         />
       </View>
+
+      <ExportVideoModal
+      visible={showExportModal}
+      onClose={() =>{
+        navigation.navigate('HomeScreen')
+      }}
+      />
     </SafeAreaView>
   );
 };
@@ -511,7 +470,11 @@ const styles = StyleSheet.create({
 
   header: {
     height: 60,
-    justifyContent: 'center',
+    display:'flex',
+    marginTop:18,
+    paddingHorizontal:24,
+    flexDirection:'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     borderBottomWidth: 1,
     borderBottomColor: colors.border || '#333',
@@ -584,8 +547,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
   },
-
-  // Controls Area (35-40% of screen)
   controlsArea: {
     flex: 1,
     paddingHorizontal: 15,
@@ -607,8 +568,9 @@ const styles = StyleSheet.create({
   },
   audioTrackText: {
     color: colors.textPrimary,
-    fontSize: 14,
+    fontSize: 16,
     flex: 1,
+    textAlignVertical:'center'
   },
   removeAudioButton: {
     padding: 5,
@@ -635,7 +597,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   audioInfo: {
-    flex: 1,
+    flex:1
   },
   audioDetailText: {
     color: colors.textSecondary || '#999',
